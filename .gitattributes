@@ -1,0 +1,31 @@
+# Normalize source files across Windows, macOS, Linux, and Docker.
+* text=auto eol=lf
+
+*.js text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.json text eol=lf
+*.ejs text eol=lf
+*.css text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.html text eol=lf
+Dockerfile text eol=lf
+
+# Media and archives must never be line-ending normalized.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.gz binary
+
+# SQLite files are ignored, but keep their binary treatment explicit.
+*.db binary
+*.sqlite binary
+*.sqlite3 binary

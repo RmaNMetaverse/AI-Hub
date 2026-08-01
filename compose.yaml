@@ -1,0 +1,15 @@
+services:
+  ai-hub:
+    build: .
+    ports:
+      - "4310:4310"
+    environment:
+      - NODE_ENV=production
+      - PORT=4310
+      - DB_PATH=/app/data/ai-hub.db
+    volumes:
+      - ai-hub-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  ai-hub-data:

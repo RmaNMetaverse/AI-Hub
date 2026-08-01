@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#08090a" />
+    <meta name="description" content="AI Hub — cinematic AI media planning and review workspace" />
+    <title>AI Hub · <%= project.title %></title>
+    <link rel="stylesheet" href="/css/app.css" />
+  </head>
+  <body class="overflow-x-hidden">
+    <div class="min-h-screen bg-[radial-gradient(circle_at_70%_-20%,rgba(214,255,69,0.06),transparent_32%)]">
+      <aside class="app-sidebar fixed inset-y-0 left-0 z-40 flex w-[232px] flex-col border-r border-white/[0.07] bg-[#0b0c0e]/95 p-4 backdrop-blur-xl lg:translate-x-0">
+        <div class="flex h-12 items-center gap-3 px-2">
+          <div class="grid h-8 w-8 place-items-center rounded-xl bg-acid text-sm font-black text-black">A</div>
+          <div>
+            <div class="text-sm font-bold tracking-tight text-white">AI Hub</div>
+            <div class="text-[9px] uppercase tracking-[0.2em] text-zinc-600">Production OS</div>
+          </div>
+        </div>
+
+        <div class="mt-7 rounded-2xl border border-white/[0.08] bg-white/[0.035] p-3">
+          <div class="mb-2 flex items-center justify-between text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
+            <span>Active project</span><i data-lucide="chevrons-up-down" class="h-3.5 w-3.5"></i>
+          </div>
+          <div class="truncate text-sm font-semibold text-zinc-200"><%= project.title %></div>
+          <div class="mt-1 text-[11px] text-zinc-600"><%= project.code %> · Short film</div>
+        </div>
+
+        <nav class="mt-6 space-y-1" aria-label="Main navigation">
+          <button class="nav-item active"><i data-lucide="layout-grid" class="h-[17px] w-[17px]"></i>Production</button>
+          <button class="nav-item"><i data-lucide="clapperboard" class="h-[17px] w-[17px]"></i>Scenes</button>
+          <button class="nav-item"><i data-lucide="images" class="h-[17px] w-[17px]"></i>Media library</button>
+          <button class="nav-item"><i data-lucide="scan-face" class="h-[17px] w-[17px]"></i>Continuity kit</button>
+          <button class="nav-item"><i data-lucide="book-open" class="h-[17px] w-[17px]"></i>Prompt library</button>
+        </nav>
+
+        <div class="mt-7 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-700">Workspace</div>
+        <nav class="mt-2 space-y-1">
+          <% if (permissions.canManageAccounts) { %>
+          <button id="teamNavButton" class="nav-item"><i data-lucide="users" class="h-[17px] w-[17px]"></i>Accounts<span class="ml-auto rounded-full bg-acid/10 px-1.5 py-0.5 text-[8px] uppercase tracking-wider text-acid">Admin</span></button>
+          <% } %>
+          <button class="nav-item"><i data-lucide="activity" class="h-[17px] w-[17px]"></i>Activity</button>
+        </nav>
+
+        <div class="mt-auto rounded-2xl border border-white/[0.08] bg-gradient-to-br from-white/[0.055] to-transparent p-3.5">
+          <div class="flex items-center gap-2 text-xs font-semibold text-zinc-300"><i data-lucide="hard-drive" class="h-4 w-4 text-acid"></i>Local workspace</div>
+          <p class="mt-2 text-[11px] leading-4 text-zinc-600">Your plans and production history are stored on this device.</p>
+        </div>
+      </aside>
+
+      <main class="min-h-screen lg:ml-[232px]">
+        <header class="sticky top-0 z-30 flex h-[68px] items-center border-b border-white/[0.07] bg-[#08090a]/80 px-4 backdrop-blur-xl sm:px-6 xl:px-8">
+          <button id="mobileMenuButton" class="icon-button mr-3 lg:hidden" aria-label="Open navigation"><i data-lucide="menu" class="h-4 w-4"></i></button>
+          <div class="relative max-w-[420px] flex-1">
+            <i data-lucide="search" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-600"></i>
+            <input id="searchInput" class="h-10 w-full rounded-full border border-transparent bg-white/[0.045] pl-10 pr-4 text-sm outline-none transition placeholder:text-zinc-600 focus:border-white/10 focus:bg-white/[0.065]" placeholder="Search plans, shots, models..." aria-label="Search plans" />
+          </div>
+          <div class="ml-auto flex items-center gap-2 pl-3">
+            <button class="icon-button hidden sm:grid" aria-label="Notifications"><i data-lucide="bell" class="h-4 w-4"></i></button>
+            <% if (permissions.canCreatePlans) { %>
+            <button id="newPlanButton" class="primary-button"><i data-lucide="plus" class="h-4 w-4"></i><span class="hidden sm:inline">New plan</span></button>
+            <% } %>
+            <div class="relative ml-1">
+              <button id="accountButton" class="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-amber-200 to-orange-700 text-xs font-bold text-black ring-2 ring-transparent transition hover:ring-white/20" aria-label="Open account menu"><%= currentUser.display_name.split(/\s+/).map(part => part[0]).join('').slice(0,2).toUpperCase() %></button>
+              <div id="accountMenu" class="absolute right-0 top-12 hidden w-64 overflow-hidden rounded-2xl border border-white/10 bg-[#151619] p-2 shadow-float">
+                <div class="border-b border-white/[0.07] px-3 py-3"><div class="truncate text-sm font-semibold text-zinc-200"><%= currentUser.display_name %></div><div class="mt-1 flex items-center gap-2 text-[10px] text-zinc-600"><span>@<%= currentUser.username %></span><span>·</span><span class="text-acid"><%= currentUser.role %></span></div></div>
+                <% if (permissions.canManageAccounts) { %><button id="manageAccountsButton" class="nav-item mt-1"><i data-lucide="users-round" class="h-4 w-4"></i>Manage accounts</button><% } %>
+                <button id="logoutButton" class="nav-item text-red-300/70 hover:text-red-200"><i data-lucide="log-out" class="h-4 w-4"></i>Sign out</button>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <div class="px-4 pb-10 pt-7 sm:px-6 xl:px-8">
+          <div class="flex flex-col justify-between gap-5 xl:flex-row xl:items-end">
+            <div>
+              <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
+                <span><%= project.code %></span><span class="h-1 w-1 rounded-full bg-zinc-700"></span><span>AI Production</span>
+              </div>
+              <h1 class="text-3xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">Production board</h1>
+              <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500"><%= project.description %></p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <div class="flex rounded-full border border-white/[0.08] bg-white/[0.035] p-1" aria-label="View options">
+                <button class="view-button active rounded-full px-3 py-1.5 text-xs font-medium text-zinc-500" data-view="board">Board</button>
+                <button class="view-button rounded-full px-3 py-1.5 text-xs font-medium text-zinc-500" data-view="gallery">Gallery</button>
+                <button class="view-button rounded-full px-3 py-1.5 text-xs font-medium text-zinc-500" data-view="table">List</button>
+              </div>
+              <select id="statusFilter" class="h-10 rounded-full border border-white/[0.08] bg-white/[0.035] px-3 text-xs font-medium text-zinc-400 outline-none">
+                <option value="all">All statuses</option>
+                <option>Idea</option><option>Brief Ready</option><option>Generating</option>
+                <option>Review</option><option>Revision</option><option>Approved</option><option>Delivered</option>
+              </select>
+            </div>
+          </div>
+
+          <section id="statsRow" class="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.07] lg:grid-cols-4">
+          </section>
+
+          <section id="boardView" class="mt-8 grid min-w-0 gap-4 xl:grid-cols-4"></section>
+          <section id="galleryView" class="mt-8 hidden grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"></section>
+          <section id="tableView" class="mt-8 hidden overflow-hidden rounded-2xl border border-white/[0.08] bg-[#101113]"></section>
+          <div id="emptyState" class="mt-16 hidden rounded-3xl border border-dashed border-white/10 py-16 text-center">
+            <i data-lucide="search-x" class="mx-auto h-8 w-8 text-zinc-700"></i>
+            <div class="mt-4 text-sm font-semibold">No plans found</div>
+            <div class="mt-1 text-xs text-zinc-600">Try another search or clear the status filter.</div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <% if (permissions.canManageAccounts) { %>
+    <div id="usersModal" class="pointer-events-none fixed inset-0 z-[65] hidden place-items-center p-4" aria-hidden="true">
+      <button id="usersModalBackdrop" class="modal-backdrop absolute inset-0 bg-black/80" aria-label="Close account management"></button>
+      <div id="usersModalCard" class="modal-card relative z-10 grid max-h-[92vh] w-full max-w-[980px] overflow-hidden rounded-3xl border border-white/10 bg-[#111214] shadow-float lg:grid-cols-[340px_1fr]">
+        <section class="border-b border-white/[0.08] p-6 lg:border-b-0 lg:border-r">
+          <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-acid">Admin controls</div>
+          <h2 class="mt-2 text-2xl font-semibold tracking-tight">Create an account</h2>
+          <p class="mt-2 text-xs leading-5 text-zinc-500">Create only a username and assign access. The user creates their own password on first sign-in.</p>
+          <form id="newUserForm" class="mt-6 space-y-4">
+            <label><span class="field-label">Display name</span><input name="display_name" class="field" placeholder="e.g. Sara Moradi" required /></label>
+            <label><span class="field-label">Username</span><div class="relative"><span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-zinc-600">@</span><input name="username" class="field pl-8" placeholder="sara.m" pattern="[a-z0-9][a-z0-9._-]{2,31}" autocapitalize="none" required /></div></label>
+            <label><span class="field-label">Role</span><select name="role" class="field"><% Object.entries(roleDefinitions).forEach(([role]) => { %><option <%= role === 'Creator' ? 'selected' : '' %>><%= role %></option><% }) %></select></label>
+            <div id="roleDescription" class="rounded-xl border border-white/[0.07] bg-black/20 p-3 text-[11px] leading-5 text-zinc-600"></div>
+            <button type="submit" class="primary-button h-11 w-full"><span>Create account</span><i data-lucide="user-plus" class="h-4 w-4"></i></button>
+          </form>
+        </section>
+        <section class="flex min-h-0 flex-col p-6">
+          <div class="flex items-start justify-between"><div><div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">Workspace access</div><h3 class="mt-2 text-xl font-semibold">Team accounts</h3></div><button id="closeUsersModalButton" class="icon-button" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
+          <div id="usersList" class="mt-5 min-h-[260px] flex-1 space-y-2 overflow-y-auto pr-1"></div>
+        </section>
+      </div>
+    </div>
+    <% } %>
+
+    <div id="newPlanModal" class="pointer-events-none fixed inset-0 z-[60] hidden place-items-center p-4" aria-hidden="true">
+      <button id="modalBackdrop" class="modal-backdrop absolute inset-0 bg-black/75" aria-label="Close new plan form"></button>
+      <div id="modalCard" class="modal-card relative z-10 max-h-[92vh] w-full max-w-[680px] overflow-y-auto rounded-3xl border border-white/10 bg-[#111214] p-5 shadow-float sm:p-7">
+        <div class="flex items-start justify-between">
+          <div><div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-acid">New production item</div><h2 class="mt-1 text-2xl font-semibold tracking-tight">Create AI Plan</h2></div>
+          <button id="closeModalButton" class="icon-button" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button>
+        </div>
+        <form id="newPlanForm" class="mt-7 grid gap-5 sm:grid-cols-2">
+          <label><span class="field-label">Plan title *</span><input name="title" class="field" placeholder="e.g. Signal discovery" required /></label>
+          <label><span class="field-label">Shot code *</span><input name="shot_code" class="field" placeholder="SC02-SH018" required /></label>
+          <label><span class="field-label">Status</span><select name="status" class="field"><option>Idea</option><option>Brief Ready</option><option>Generating</option><option>Review</option></select></label>
+          <label><span class="field-label">Media type</span><select name="media_type" class="field"><option>Video</option><option>Image</option><option>Audio</option><option>Voice</option><option>VFX element</option></select></label>
+          <label><span class="field-label">AI model</span><input name="model" class="field" placeholder="Not selected" /></label>
+          <label><span class="field-label">Due date</span><input type="date" name="due_date" class="field" /></label>
+          <label class="sm:col-span-2"><span class="field-label">Creative brief</span><textarea name="description" class="field min-h-24 resize-y" placeholder="What should this plan achieve in the film?"></textarea></label>
+          <label class="sm:col-span-2"><span class="field-label">Starting prompt</span><textarea name="prompt" class="field min-h-28 resize-y" placeholder="Describe subject, environment, camera, lighting, and movement..."></textarea></label>
+          <div class="flex items-center justify-end gap-3 sm:col-span-2">
+            <button type="button" id="cancelModalButton" class="ghost-button">Cancel</button>
+            <button type="submit" class="primary-button px-6"><span>Create plan</span><i data-lucide="arrow-right" class="h-4 w-4"></i></button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="toast" class="pointer-events-none fixed bottom-5 left-1/2 z-[70] flex -translate-x-1/2 translate-y-4 items-center gap-2 rounded-full border border-white/10 bg-zinc-100 px-4 py-2.5 text-xs font-semibold text-black opacity-0 shadow-float transition-all"><i data-lucide="check" class="h-4 w-4"></i><span></span></div>
+
+    <script>
+      window.__AI_HUB_PLANS__ = <%- serializedPlans %>;
+      window.__AI_HUB_CURRENT_USER__ = <%- serializedUser %>;
+      window.__AI_HUB_PERMISSIONS__ = <%- serializedPermissions %>;
+      window.__AI_HUB_ROLES__ = <%- JSON.stringify(roleDefinitions).replaceAll('<', '\\u003c') %>;
+    </script>
+    <script src="/vendor/lucide/lucide.js"></script>
+    <script src="/js/app.js" defer></script>
+  </body>
+</html>
