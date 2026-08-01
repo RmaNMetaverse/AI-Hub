@@ -12,6 +12,8 @@
     <% const statusStyles = { Idea: 'border-zinc-700/70 bg-zinc-800/60 text-zinc-400', 'Brief Ready': 'border-violet-400/20 bg-violet-400/10 text-violet-300', Generating: 'border-amber-400/20 bg-amber-400/10 text-amber-300', Revision: 'border-orange-400/20 bg-orange-400/10 text-orange-300', Review: 'border-sky-400/20 bg-sky-400/10 text-sky-300', Approved: 'border-lime-400/20 bg-lime-400/10 text-lime-300', Delivered: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300' }; %>
     <% const userInitials = currentUser.display_name.split(/\s+/).map(part => part[0]).join('').slice(0,2).toUpperCase(); %>
     <% const ownerInitials = plan.owner.split(/\s+/).map(part => part[0]).join('').slice(0,2).toUpperCase(); %>
+    <% const formatBytes = bytes => { const value = Number(bytes || 0); if (!value) return '0 B'; const units = ['B','KB','MB','GB','TB']; const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1); return `${(value / (1024 ** index)).toFixed(index ? 1 : 0)} ${units[index]}`; }; %>
+    <% const resourceIcons = { image: 'image', video: 'file-video-2', audio: 'audio-lines', document: 'file-text', archive: 'archive', other: 'file-box' }; %>
     <div class="min-h-screen bg-[radial-gradient(circle_at_55%_-20%,rgba(214,255,69,0.055),transparent_35%)]">
       <header class="sticky top-0 z-40 flex h-[68px] items-center border-b border-white/[0.07] bg-[#08090a]/85 px-4 backdrop-blur-xl sm:px-6 xl:px-8">
         <a href="/" class="flex items-center gap-3" aria-label="AI Hub production board">
@@ -61,6 +63,7 @@
 
         <div class="sticky top-[68px] z-30 mt-5 flex items-center gap-1 overflow-x-auto rounded-2xl border border-white/[0.07] bg-[#0e0f11]/90 p-1.5 backdrop-blur-xl">
           <button class="shot-tab active shrink-0 rounded-xl px-4 py-2 text-xs font-semibold" data-tab="overview"><i data-lucide="layout-dashboard" class="mr-2 inline h-3.5 w-3.5"></i>Overview</button>
+          <button class="shot-tab shrink-0 rounded-xl px-4 py-2 text-xs font-semibold text-zinc-600" data-tab="resources"><i data-lucide="folder-kanban" class="mr-2 inline h-3.5 w-3.5"></i>Resources <span id="resourceTabCount" class="ml-1 rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px]"><%= plan.resource_count %></span></button>
           <button class="shot-tab shrink-0 rounded-xl px-4 py-2 text-xs font-semibold text-zinc-600" data-tab="generations"><i data-lucide="layers-3" class="mr-2 inline h-3.5 w-3.5"></i>Generations <span class="ml-1 rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px]"><%= plan.experiments_count %></span></button>
           <button class="shot-tab shrink-0 rounded-xl px-4 py-2 text-xs font-semibold text-zinc-600" data-tab="prompt"><i data-lucide="braces" class="mr-2 inline h-3.5 w-3.5"></i>Prompt & settings</button>
           <button class="shot-tab shrink-0 rounded-xl px-4 py-2 text-xs font-semibold text-zinc-600" data-tab="notes"><i data-lucide="notebook-pen" class="mr-2 inline h-3.5 w-3.5"></i>Notes</button>
@@ -88,6 +91,71 @@
                 <div class="flex items-center justify-between border-b border-white/[0.07] px-6 py-4"><div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Latest candidates</div><div class="mt-1 text-xs text-zinc-500">Most recent generations attached to this shot</div></div><button class="text-[10px] font-semibold text-zinc-500 hover:text-white" data-open-tab="generations">View all</button></div>
                 <div class="grid gap-3 p-4 sm:grid-cols-2"><% if (plan.generations.length) { plan.generations.slice(0,2).forEach((generation, index) => { %><div class="rounded-2xl border border-white/[0.07] bg-black/20 p-2.5"><div class="media-frame relative aspect-video rounded-xl" style="--image-position:<%= plan.image_position %>;filter:<%= index ? 'saturate(.78) brightness(.86)' : 'none' %>"><div class="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[9px] font-semibold backdrop-blur"><%= generation.prompt_version %></div></div><div class="flex items-center justify-between px-1 pb-1 pt-3"><div><div class="text-xs font-semibold"><%= generation.label %></div><div class="mt-1 text-[10px] text-zinc-600"><%= generation.model %></div></div><div class="rounded-full border border-white/[0.08] px-2 py-1 text-[10px] text-zinc-500"><%= generation.rating %>/5</div></div></div><% }) } else { %><div class="col-span-2 rounded-2xl border border-dashed border-white/10 py-12 text-center text-xs text-zinc-600">No generations logged yet.</div><% } %></div>
               </article>
+            </section>
+
+            <section class="shot-panel hidden" data-panel="resources">
+              <div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+                <div>
+                  <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Shot resources</div>
+                  <h2 class="mt-2 text-2xl font-semibold tracking-tight">Media & production files</h2>
+                  <p class="mt-2 max-w-2xl text-sm text-zinc-500">Keep every reference, test, generation, sound file, document, and approved final attached to this shot.</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <div class="rounded-full border border-white/[0.08] px-3 py-1.5 text-[10px] text-zinc-500"><span id="resourceSummaryCount"><%= plan.resource_count %></span> files · <span id="resourceSummaryBytes"><%= formatBytes(plan.resource_bytes) %></span></div>
+                  <% if (plan.resources.length) { %><select id="resourceFilter" class="field h-9 w-auto min-w-32 py-0 text-xs"><option value="all">All types</option><% resourceCategories.forEach(category => { %><option value="<%= category %>"><%= category %></option><% }) %></select><% } %>
+                </div>
+              </div>
+
+              <% if (permissions.canEditPlans) { %>
+                <form id="resourceUploadForm" data-max-upload-bytes="<%= maxUploadBytes %>" class="mt-6 rounded-3xl border border-white/[0.08] bg-[#101113] p-4 sm:p-5">
+                  <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+                    <div id="resourceDropZone" role="button" tabindex="0" class="group grid min-h-40 cursor-pointer place-items-center rounded-2xl border border-dashed border-white/15 bg-black/20 p-6 text-center outline-none transition hover:border-acid/40 hover:bg-acid/[0.025] focus:border-acid/50 focus:ring-2 focus:ring-acid/10">
+                      <input id="resourceFileInput" name="file" type="file" multiple class="hidden" />
+                      <div>
+                        <span class="mx-auto grid h-11 w-11 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-zinc-500 transition group-hover:border-acid/20 group-hover:text-acid"><i data-lucide="upload-cloud" class="h-5 w-5"></i></span>
+                        <div class="mt-4 text-sm font-semibold text-zinc-300">Drop files here or choose from your computer</div>
+                        <div class="mt-1.5 text-[11px] text-zinc-600">Images, video, audio, documents, archives, and source files · up to <%= formatBytes(maxUploadBytes) %> each</div>
+                      </div>
+                    </div>
+                    <div class="flex flex-col gap-3">
+                      <label><span class="field-label">Resource category</span><select id="resourceCategory" class="field"><% resourceCategories.forEach(category => { %><option value="<%= category %>" <%= category === 'Generation' ? 'selected' : '' %>><%= category %></option><% }) %></select></label>
+                      <label class="flex-1"><span class="field-label">Upload note <span class="normal-case tracking-normal text-zinc-700">optional</span></span><textarea id="resourceNotes" class="field h-20 resize-none py-2.5 text-xs" maxlength="2000" placeholder="What is this file for?"></textarea></label>
+                    </div>
+                  </div>
+                  <div id="resourceUploadQueue" class="mt-4 hidden space-y-2 border-t border-white/[0.07] pt-4"></div>
+                </form>
+              <% } %>
+
+              <div id="resourceGrid" class="mt-6 grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+                <% if (plan.resources.length) { plan.resources.forEach(resource => { %>
+                  <article class="resource-card group overflow-hidden rounded-3xl border <%= resource.category === 'Final' ? 'border-acid/20 bg-acid/[0.025]' : 'border-white/[0.07] bg-[#101113]' %>" data-resource-card="<%= resource.id %>" data-resource-category="<%= resource.category %>">
+                    <div class="relative aspect-video overflow-hidden bg-black/30">
+                      <% if (resource.kind === 'image' && !resource.mime_type.includes('svg')) { %>
+                        <a href="/resources/<%= resource.id %>/content" target="_blank" rel="noopener"><img src="/resources/<%= resource.id %>/content" alt="<%= resource.original_name %>" loading="lazy" class="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]" /></a>
+                      <% } else if (resource.kind === 'video') { %>
+                        <video src="/resources/<%= resource.id %>/content" controls preload="metadata" class="h-full w-full bg-black object-contain"></video>
+                      <% } else if (resource.kind === 'audio') { %>
+                        <div class="flex h-full flex-col items-center justify-center p-5"><span class="grid h-14 w-14 place-items-center rounded-2xl bg-violet-400/10 text-violet-300"><i data-lucide="audio-lines" class="h-6 w-6"></i></span><audio src="/resources/<%= resource.id %>/content" controls preload="metadata" class="mt-5 h-9 w-full"></audio></div>
+                      <% } else { %>
+                        <a href="/resources/<%= resource.id %>/content?download=1" class="flex h-full flex-col items-center justify-center text-zinc-700 transition hover:text-zinc-400"><span class="grid h-16 w-16 place-items-center rounded-2xl border border-white/[0.07] bg-white/[0.025]"><i data-lucide="<%= resourceIcons[resource.kind] || resourceIcons.other %>" class="h-7 w-7"></i></span><span class="mt-3 text-[9px] font-semibold uppercase tracking-[0.14em]"><%= resource.kind %></span></a>
+                      <% } %>
+                      <span class="absolute left-3 top-3 rounded-full border border-white/10 bg-black/65 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] <%= resource.category === 'Final' ? 'text-acid' : 'text-zinc-300' %> backdrop-blur"><%= resource.category %></span>
+                    </div>
+                    <div class="p-4">
+                      <div class="truncate text-sm font-semibold text-zinc-200" title="<%= resource.original_name %>"><%= resource.original_name %></div>
+                      <div class="mt-1.5 flex items-center gap-2 text-[10px] text-zinc-600"><span><%= formatBytes(resource.size_bytes) %></span><span>·</span><span><%= resource.created_at.slice(0,10) %></span><% if (resource.uploaded_by_name) { %><span>·</span><span class="truncate"><%= resource.uploaded_by_name %></span><% } %></div>
+                      <% if (resource.notes) { %><p class="mt-3 line-clamp-2 text-[11px] leading-5 text-zinc-500"><%= resource.notes %></p><% } %>
+                      <div class="mt-4 flex items-center gap-2 border-t border-white/[0.06] pt-3">
+                        <a href="/resources/<%= resource.id %>/content" target="_blank" rel="noopener" class="ghost-button h-8 px-3 text-[10px]"><i data-lucide="expand" class="h-3.5 w-3.5"></i>Open</a>
+                        <a href="/resources/<%= resource.id %>/content?download=1" class="icon-button h-8 w-8" title="Download <%= resource.original_name %>" aria-label="Download <%= resource.original_name %>"><i data-lucide="download" class="h-3.5 w-3.5"></i></a>
+                        <% if (permissions.canEditPlans) { %><button type="button" class="resource-delete-button icon-button ml-auto h-8 w-8 text-zinc-600 hover:border-red-300/20 hover:text-red-300" data-resource-id="<%= resource.id %>" data-resource-name="<%= resource.original_name %>" aria-label="Remove <%= resource.original_name %>"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button><% } %>
+                      </div>
+                    </div>
+                  </article>
+                <% }) } else { %>
+                  <div id="emptyResources" class="sm:col-span-2 2xl:col-span-3 rounded-3xl border border-dashed border-white/10 py-20 text-center"><i data-lucide="folder-open" class="mx-auto h-8 w-8 text-zinc-700"></i><div class="mt-4 text-sm font-semibold">No resources attached</div><div class="mt-1 text-xs text-zinc-600"><%= permissions.canEditPlans ? 'Upload the first reference, generation, or final for this shot.' : 'This shot does not have any production files yet.' %></div></div>
+                <% } %>
+              </div>
             </section>
 
             <section class="shot-panel hidden" data-panel="generations">

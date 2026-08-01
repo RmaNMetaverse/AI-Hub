@@ -1,15 +1,22 @@
 import path from "node:path";
+import fs from "node:fs";
+import { promises as fsp } from "node:fs";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import {
   createAccount,
   createPlan,
+  createResource,
+  deleteResourceRecord,
   getDashboard,
   getPlan,
+  getResource,
   listAccounts,
+  listResources,
   updatePlan,
   updatePlanStatus,
-  updateAccount
+  updateAccount,
+  updateResource
 } from "./src/db.js";
 import {
   ROLE_DEFINITIONS,
@@ -23,11 +30,45 @@ import {
   permissionsFor,
   validateUsername
 } from "./src/auth.js";
+import {
+  absoluteStoragePath,
+  canPreviewInline,
+  checksumFile,
+  cinematicThumbnailChecksum,
+  cinematicThumbnailStorageKey,
+  contentDisposition,
+  maxUploadBytes,
+  removeStoredFile,
+  resourceKind,
+  safeOriginalName,
+  storageKeyForFile,
+  uploadResourceFile
+} from "./src/storage.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const serverPath = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(serverPath);
 const app = express();
 const port = Number(process.env.PORT || 4310);
 const loginAttempts = new Map();
+const resourceCategories = ["Reference", "Generation", "Final", "Audio", "Document", "Other"];
+
+function resourceForClient(resource) {
+  if (!resource) return null;
+  const { storage_key: _storageKey, ...publicResource } = resource;
+  return {
+    ...publicResource,
+    content_url: `/resources/${resource.id}/content`,
+    download_url: `/resources/${resource.id}/content?download=1`
+  };
+}
+
+function planForClient(plan) {
+  if (!plan) return null;
+  return {
+    ...plan,
+    resources: Array.isArray(plan.resources) ? plan.resources.map(resourceForClient) : plan.resources
+  };
+}
 
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
@@ -144,6 +185,28 @@ app.get("/health", (_request, response) => {
 
 app.use(requireAuth);
 
+app.get("/storage/thumbnails/cinematic-frames", (request, response) => {
+  const thumbnailPath = absoluteStoragePath(cinematicThumbnailStorageKey);
+  let thumbnailStats;
+  try {
+    thumbnailStats = fs.statSync(thumbnailPath);
+  } catch (error) {
+    if (error.code === "ENOENT") return response.status(404).send("Thumbnail not found");
+    throw error;
+  }
+
+  const etag = `"${cinematicThumbnailChecksum}"`;
+  response.setHeader("Cache-Control", "private, max-age=86400");
+  response.setHeader("ETag", etag);
+  response.setHeader("Content-Type", "image/png");
+  response.setHeader("Content-Length", thumbnailStats.size);
+  response.setHeader("Content-Disposition", "inline");
+  response.setHeader("Last-Modified", thumbnailStats.mtime.toUTCString());
+
+  if (request.headers["if-none-match"] === etag) return response.status(304).end();
+  fs.createReadStream(thumbnailPath).pipe(response);
+});
+
 app.get("/", (request, response) => {
   const dashboard = getDashboard();
   response.render("index", {
@@ -167,6 +230,7 @@ function allowedStatusesForPlan(user, permissions, plan) {
 app.get("/plans/:id", (request, response) => {
   const plan = getPlan(Number(request.params.id));
   if (!plan) return response.status(404).send("Shot not found");
+  const displayPlan = planForClient(plan);
   const dashboard = getDashboard();
   const orderedPlans = [...dashboard.plans].sort((first, second) => first.shot_code.localeCompare(second.shot_code, undefined, { numeric: true }));
   const planIndex = orderedPlans.findIndex((item) => item.id === plan.id);
@@ -176,13 +240,15 @@ app.get("/plans/:id", (request, response) => {
 
   response.render("plan", {
     project: dashboard.project,
-    plan,
+    plan: displayPlan,
     previousPlan,
     nextPlan,
     currentUser: request.user,
     permissions: request.permissions,
     allowedStatuses,
-    serializedPlan: JSON.stringify(plan).replaceAll("<", "\\u003c"),
+    resourceCategories,
+    maxUploadBytes,
+    serializedPlan: JSON.stringify(displayPlan).replaceAll("<", "\\u003c"),
     serializedUser: JSON.stringify(request.user).replaceAll("<", "\\u003c"),
     serializedPermissions: JSON.stringify(request.permissions).replaceAll("<", "\\u003c")
   });
@@ -191,13 +257,13 @@ app.get("/plans/:id", (request, response) => {
 app.get("/api/plans/:id", (request, response) => {
   const plan = getPlan(Number(request.params.id));
   if (!plan) return response.status(404).json({ error: "Plan not found" });
-  response.json(plan);
+  response.json(planForClient(plan));
 });
 
 app.post("/api/plans", requirePermission("canCreatePlans"), (request, response) => {
   try {
     const plan = createPlan(request.body);
-    response.status(201).json(plan);
+    response.status(201).json(planForClient(plan));
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
@@ -217,7 +283,7 @@ app.patch("/api/plans/:id/status", (request, response) => {
       return response.status(403).json({ error: "Your role cannot move a plan to that status" });
     }
     const plan = updatePlanStatus(Number(request.params.id), request.body.status);
-    response.json(plan);
+    response.json(planForClient(plan));
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
@@ -226,10 +292,141 @@ app.patch("/api/plans/:id/status", (request, response) => {
 app.patch("/api/plans/:id", requirePermission("canEditPlans"), (request, response) => {
   try {
     const plan = updatePlan(Number(request.params.id), request.body);
-    response.json(plan);
+    response.json(planForClient(plan));
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
+});
+
+app.get("/api/plans/:id/resources", (request, response) => {
+  const plan = getPlan(Number(request.params.id));
+  if (!plan) return response.status(404).json({ error: "Plan not found" });
+  response.json({
+    resources: listResources(plan.id).map(resourceForClient),
+    maxUploadBytes,
+    categories: resourceCategories
+  });
+});
+
+app.post("/api/plans/:id/resources", requirePermission("canEditPlans"), (request, response) => {
+  const plan = getPlan(Number(request.params.id));
+  if (!plan) return response.status(404).json({ error: "Plan not found" });
+
+  uploadResourceFile(request, response, async (uploadError) => {
+    let storageKey;
+    try {
+      if (uploadError) {
+        const status = uploadError.code === "LIMIT_FILE_SIZE" ? 413 : 400;
+        const message = uploadError.code === "LIMIT_FILE_SIZE"
+          ? `This file is larger than the ${Math.round(maxUploadBytes / 1024 / 1024 / 1024)} GB upload limit`
+          : uploadError.message;
+        return response.status(status).json({ error: message });
+      }
+      if (!request.file) return response.status(400).json({ error: "Choose a file to upload" });
+      storageKey = storageKeyForFile(request.file.path);
+      if (!request.file.size) {
+        await removeStoredFile(storageKey);
+        return response.status(400).json({ error: "Empty files cannot be uploaded" });
+      }
+
+      const originalName = safeOriginalName(request.file.originalname);
+      const kind = resourceKind(request.file.mimetype, originalName);
+      const suggestedCategory = kind === "audio" ? "Audio" : kind === "document" ? "Document" : "Generation";
+      const category = resourceCategories.includes(request.body.category) ? request.body.category : suggestedCategory;
+      const notes = String(request.body.notes || "").trim().slice(0, 2000);
+      const checksumSha256 = await checksumFile(request.file.path);
+      const resource = createResource({
+        planId: plan.id,
+        uploadedBy: request.user.id,
+        originalName,
+        storageKey,
+        mimeType: String(request.file.mimetype || "application/octet-stream").slice(0, 160),
+        kind,
+        category,
+        sizeBytes: request.file.size,
+        checksumSha256,
+        notes
+      });
+      response.status(201).json(resourceForClient(resource));
+    } catch (error) {
+      if (storageKey) await removeStoredFile(storageKey).catch(() => {});
+      response.status(500).json({ error: "The upload could not be saved" });
+    }
+  });
+});
+
+app.patch("/api/resources/:id", requirePermission("canEditPlans"), (request, response) => {
+  try {
+    const current = getResource(Number(request.params.id));
+    if (!current) return response.status(404).json({ error: "Resource not found" });
+    const category = request.body.category === undefined ? current.category : String(request.body.category);
+    if (!resourceCategories.includes(category)) return response.status(400).json({ error: "Invalid resource category" });
+    const notes = request.body.notes === undefined ? current.notes : String(request.body.notes).trim().slice(0, 2000);
+    response.json(resourceForClient(updateResource(current.id, { category, notes })));
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.delete("/api/resources/:id", requirePermission("canEditPlans"), async (request, response) => {
+  try {
+    const resource = getResource(Number(request.params.id));
+    if (!resource) return response.status(404).json({ error: "Resource not found" });
+    await removeStoredFile(resource.storage_key);
+    deleteResourceRecord(resource.id);
+    response.status(204).end();
+  } catch (_error) {
+    response.status(500).json({ error: "The resource could not be removed" });
+  }
+});
+
+app.get("/resources/:id/content", async (request, response) => {
+  const resource = getResource(Number(request.params.id));
+  if (!resource) return response.status(404).json({ error: "Resource not found" });
+
+  let filePath;
+  let fileStat;
+  try {
+    filePath = absoluteStoragePath(resource.storage_key);
+    fileStat = await fsp.stat(filePath);
+  } catch (_error) {
+    return response.status(404).json({ error: "Stored file not found" });
+  }
+
+  const totalSize = fileStat.size;
+  const forceDownload = request.query.download === "1";
+  response.setHeader("Accept-Ranges", "bytes");
+  response.setHeader("Cache-Control", "private, max-age=3600");
+  response.setHeader("Content-Type", resource.mime_type || "application/octet-stream");
+  response.setHeader("Content-Disposition", contentDisposition(resource.original_name, !forceDownload && canPreviewInline(resource.mime_type)));
+  response.setHeader("ETag", `\"${resource.checksum_sha256}\"`);
+  response.setHeader("Last-Modified", fileStat.mtime.toUTCString());
+
+  const rangeHeader = request.headers.range;
+  if (rangeHeader) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+    if (!match) {
+      response.setHeader("Content-Range", `bytes */${totalSize}`);
+      return response.status(416).end();
+    }
+    const requestedStart = match[1] ? Number(match[1]) : null;
+    const requestedEnd = match[2] ? Number(match[2]) : null;
+    const start = requestedStart === null ? Math.max(0, totalSize - requestedEnd) : requestedStart;
+    const end = requestedStart === null ? totalSize - 1 : Math.min(requestedEnd ?? totalSize - 1, totalSize - 1);
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start > end || start >= totalSize) {
+      response.setHeader("Content-Range", `bytes */${totalSize}`);
+      return response.status(416).end();
+    }
+    response.status(206);
+    response.setHeader("Content-Range", `bytes ${start}-${end}/${totalSize}`);
+    response.setHeader("Content-Length", end - start + 1);
+    if (request.method === "HEAD") return response.end();
+    return fs.createReadStream(filePath, { start, end }).pipe(response);
+  }
+
+  response.setHeader("Content-Length", totalSize);
+  if (request.method === "HEAD") return response.end();
+  fs.createReadStream(filePath).pipe(response);
 });
 
 app.get("/api/users", requirePermission("canManageAccounts"), (_request, response) => {
@@ -270,6 +467,10 @@ app.use((_request, response) => {
   response.status(404).json({ error: "Not found" });
 });
 
-app.listen(port, "0.0.0.0", () => {
-  console.log(`AI Hub is running at http://localhost:${port}`);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === serverPath) {
+  app.listen(port, "0.0.0.0", () => {
+    console.log(`AI Hub is running at http://localhost:${port}`);
+  });
+}
+
+export { app };

@@ -1,0 +1,30 @@
+name: Docker CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Containerized checks and tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+      - name: Build the verification image
+        run: docker build --target verification --tag ai-hub-verification:${{ github.sha }} .
+      - name: Run checks and integration tests
+        run: docker run --rm --tmpfs /tmp --env DB_PATH=/tmp/ai-hub-test.db ai-hub-verification:${{ github.sha }}
+
+  production-image:
+    name: Production image builds
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v6
+      - name: Build the production image
+        run: docker build --target production --tag ai-hub-production:${{ github.sha }} .

@@ -5,6 +5,8 @@ node_modules/
 
 # Runtime data — never commit accounts, sessions, passwords, or production plans
 data/
+storage/
+uploads/
 *.db
 *.db-shm
 *.db-wal

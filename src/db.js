@@ -82,12 +82,30 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS resources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id INTEGER NOT NULL REFERENCES ai_plans(id) ON DELETE CASCADE,
+    uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    original_name TEXT NOT NULL,
+    storage_key TEXT NOT NULL UNIQUE,
+    mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+    kind TEXT NOT NULL DEFAULT 'other',
+    category TEXT NOT NULL DEFAULT 'Other',
+    size_bytes INTEGER NOT NULL,
+    checksum_sha256 TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE INDEX IF NOT EXISTS ai_plans_status_idx ON ai_plans(status);
   CREATE INDEX IF NOT EXISTS ai_plans_project_idx ON ai_plans(project_id);
   CREATE INDEX IF NOT EXISTS generations_plan_idx ON generations(plan_id);
   CREATE INDEX IF NOT EXISTS users_role_idx ON users(role);
   CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions(user_id);
   CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expires_at);
+  CREATE INDEX IF NOT EXISTS resources_plan_idx ON resources(plan_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS resources_category_idx ON resources(category);
 `);
 
 function seedInitialAdmin() {
@@ -233,7 +251,75 @@ export function getPlan(id) {
   const plan = db.prepare("SELECT * FROM ai_plans WHERE id = ?").get(id);
   if (!plan) return null;
   const generations = db.prepare("SELECT * FROM generations WHERE plan_id = ? ORDER BY id DESC").all(id);
-  return { ...normalizePlan(plan), generations };
+  const resources = listResources(id);
+  return {
+    ...normalizePlan(plan),
+    generations,
+    resources,
+    resource_count: resources.length,
+    resource_bytes: resources.reduce((total, resource) => total + resource.size_bytes, 0)
+  };
+}
+
+export function listResources(planId) {
+  return db.prepare(`
+    SELECT r.*, u.display_name AS uploaded_by_name, u.username AS uploaded_by_username
+    FROM resources r
+    LEFT JOIN users u ON u.id = r.uploaded_by
+    WHERE r.plan_id = ?
+    ORDER BY
+      CASE r.category WHEN 'Final' THEN 1 WHEN 'Generation' THEN 2 WHEN 'Reference' THEN 3 ELSE 4 END,
+      r.created_at DESC,
+      r.id DESC
+  `).all(planId);
+}
+
+export function getResource(id) {
+  return db.prepare(`
+    SELECT r.*, u.display_name AS uploaded_by_name, u.username AS uploaded_by_username
+    FROM resources r
+    LEFT JOIN users u ON u.id = r.uploaded_by
+    WHERE r.id = ?
+  `).get(id);
+}
+
+export function createResource(input) {
+  const resourceId = db.transaction(() => {
+    const result = db.prepare(`
+      INSERT INTO resources (
+        plan_id, uploaded_by, original_name, storage_key, mime_type, kind,
+        category, size_bytes, checksum_sha256, notes
+      ) VALUES (
+        @planId, @uploadedBy, @originalName, @storageKey, @mimeType, @kind,
+        @category, @sizeBytes, @checksumSha256, @notes
+      )
+    `).run(input);
+    db.prepare("UPDATE ai_plans SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(input.planId);
+    return Number(result.lastInsertRowid);
+  })();
+  return getResource(resourceId);
+}
+
+export function updateResource(id, { category, notes }) {
+  const current = getResource(id);
+  if (!current) throw new Error("Resource not found");
+  db.prepare(`
+    UPDATE resources
+    SET category = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(category ?? current.category, notes ?? current.notes, id);
+  db.prepare("UPDATE ai_plans SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(current.plan_id);
+  return getResource(id);
+}
+
+export function deleteResourceRecord(id) {
+  const current = getResource(id);
+  if (!current) return false;
+  return db.transaction(() => {
+    const deleted = db.prepare("DELETE FROM resources WHERE id = ?").run(id).changes > 0;
+    if (deleted) db.prepare("UPDATE ai_plans SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(current.plan_id);
+    return deleted;
+  })();
 }
 
 const allowedStatuses = new Set(["Idea", "Brief Ready", "Generating", "Review", "Revision", "Approved", "Delivered"]);

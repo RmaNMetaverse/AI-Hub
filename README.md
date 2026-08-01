@@ -2,22 +2,49 @@
 
 AI Hub is a local-first cinematic production workspace for planning AI media, tracking prompt versions and generations, reviewing results, and approving finals.
 
-## Run locally
+## Start AI Hub
 
-1. Install Node.js 22 or later.
-2. Run `npm install`.
-3. Run `npm run dev`.
-4. Open `http://localhost:4310`.
+Docker is the standard runtime for AI Hub. Install Docker Desktop, then run:
 
-The SQLite database is created automatically in `data/ai-hub.db` and seeded with a fictional short-film project the first time the app starts.
+```sh
+docker compose up --build app
+```
+
+Open `http://localhost:4310`. The development container watches the server, browser JavaScript, templates, and Tailwind styles for changes.
+
+The SQLite database is created automatically in the persistent `ai-hub-data` Docker volume. Uploaded media is stored separately in the persistent `ai-hub-media` volume. Fresh installations remain independent; AI Hub only seeds its bundled cinematic UI thumbnail into the new media volume.
 
 On a new workspace, sign in with the username `admin`. Because it is the account's first sign-in, AI Hub will ask you to create the Admin password. There is no default password.
 
-## Run with Docker
+## Docker workflows
 
-Run `docker compose up --build`, then open `http://localhost:4310`.
+All normal development and verification happens inside containers:
 
-The Docker volume `ai-hub-data` keeps the SQLite database between container restarts.
+```sh
+# Live development
+docker compose up --build app
+
+# JavaScript syntax checks
+docker compose --profile tools run --build --rm check
+
+# Isolated integration tests
+docker compose --profile tools run --build --rm test
+
+# Production-mode image and service
+docker compose --profile production up --build -d production
+```
+
+The test container uses a temporary SQLite database in memory-backed container storage. It never mounts the development database volume.
+
+GitHub Actions also builds the Docker verification target, runs all checks and tests in that image, and confirms that the production image can be built.
+
+See [`docs/DOCKER.md`](docs/DOCKER.md) for the container architecture and [`docs/STORAGE.md`](docs/STORAGE.md) for media storage, Linux disk configuration, and backup notes.
+
+## Optional host fallback
+
+Direct host execution is available only as a fallback. Install Node.js 22, run `npm ci`, then `npm run start:host`.
+
+The Docker workflow remains the source of truth for checks, tests, and production behavior.
 
 ## Current features
 
@@ -27,7 +54,12 @@ The Docker volume `ai-hub-data` keeps the SQLite database between container rest
 - Search and status filtering
 - Persistent AI Plan creation
 - Drag plans between workflow stages
-- Detailed plan drawer with brief, prompt, quality, generations, issues, and next action
+- Full-page shot workspace with brief, prompt, quality, generations, issues, and next action
+- Per-shot resource workspace for images, video, audio, documents, archives, generations, and finals
+- Drag-and-drop multi-file uploads with progress and configurable 20 GiB per-file limit
+- Private streamed downloads and byte-range video/audio playback
+- SHA-256 integrity checks and persistent Docker media storage
+- Storage-backed, authenticated thumbnails for boards and shot pages
 - Status and final-approval updates
 - Local SQLite persistence
 - Protected sign-in and 12-hour local sessions
@@ -42,6 +74,8 @@ The Docker volume `ai-hub-data` keeps the SQLite database between container rest
 - Vanilla browser JavaScript
 - Tailwind CSS
 - SQLite via better-sqlite3
+- Docker Compose for development, verification, and production
+- Multer streaming uploads with filesystem-backed media storage
 
 ## Roles
 

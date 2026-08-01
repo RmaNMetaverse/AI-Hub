@@ -6,16 +6,24 @@
   "type": "module",
   "scripts": {
     "css:build": "tailwindcss -i ./public/css/input.css -o ./public/css/app.css --minify",
-    "css:watch": "tailwindcss -i ./public/css/input.css -o ./public/css/app.css --watch",
-    "dev": "npm run css:build && node --watch server.js",
-    "start": "npm run css:build && node server.js",
-    "check": "node --check server.js && node --check src/db.js && node --check src/auth.js && node --check public/js/app.js && node --check public/js/auth.js && node --check public/js/plan-detail.js"
+    "css:watch": "tailwindcss -i ./public/css/input.css -o ./public/css/app.css --watch=always --poll",
+    "dev": "npm run css:build && node scripts/dev.js",
+    "start": "node server.js",
+    "start:host": "npm run css:build && node server.js",
+    "check": "node --check server.js && node --check src/db.js && node --check src/auth.js && node --check src/storage.js && node --check scripts/dev.js && node --check scripts/container-dev.js && node --check tests/app.test.js && node --check public/js/app.js && node --check public/js/auth.js && node --check public/js/plan-detail.js",
+    "test": "node --test --test-concurrency=1 tests/app.test.js",
+    "verify": "npm run check && npm test",
+    "docker:dev": "docker compose up --build app",
+    "docker:check": "docker compose --profile tools run --build --rm check",
+    "docker:test": "docker compose --profile tools run --build --rm test",
+    "docker:prod": "docker compose --profile production up --build -d production"
   },
   "dependencies": {
     "better-sqlite3": "^12.2.0",
     "ejs": "^3.1.10",
     "express": "^5.1.0",
-    "lucide": "^0.468.0"
+    "lucide": "^0.468.0",
+    "multer": "^2.2.0"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.17"
