@@ -45,6 +45,7 @@ db.exec(`
     duration TEXT NOT NULL DEFAULT '5 sec',
     tags TEXT NOT NULL DEFAULT '',
     image_position TEXT NOT NULL DEFAULT '0% 0%',
+    selected_generation_id INTEGER,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
@@ -58,7 +59,22 @@ db.exec(`
     rating REAL NOT NULL DEFAULT 0,
     verdict TEXT NOT NULL DEFAULT 'Promising',
     notes TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    prompt TEXT NOT NULL DEFAULT '',
+    negative_prompt TEXT NOT NULL DEFAULT '',
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    input_cost_per_million REAL NOT NULL DEFAULT 0,
+    output_cost_per_million REAL NOT NULL DEFAULT 0,
+    provider_job_id TEXT NOT NULL DEFAULT '',
+    seed TEXT NOT NULL DEFAULT '',
+    version_number INTEGER,
+    platform_id INTEGER,
+    platform_name TEXT NOT NULL DEFAULT '',
+    token_count INTEGER NOT NULL DEFAULT 0,
+    token_price_snapshot REAL NOT NULL DEFAULT 0,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS users (
@@ -98,6 +114,40 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS generation_resources (
+    generation_id INTEGER NOT NULL REFERENCES generations(id) ON DELETE CASCADE,
+    resource_id INTEGER NOT NULL REFERENCES resources(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (generation_id, resource_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS generation_models (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS generation_platforms (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    token_price REAL NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS generation_resource_roles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    active INTEGER NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE INDEX IF NOT EXISTS ai_plans_status_idx ON ai_plans(status);
   CREATE INDEX IF NOT EXISTS ai_plans_project_idx ON ai_plans(project_id);
   CREATE INDEX IF NOT EXISTS generations_plan_idx ON generations(plan_id);
@@ -106,7 +156,51 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expires_at);
   CREATE INDEX IF NOT EXISTS resources_plan_idx ON resources(plan_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS resources_category_idx ON resources(category);
+  CREATE INDEX IF NOT EXISTS generation_resources_resource_idx ON generation_resources(resource_id);
 `);
+
+function ensureColumn(table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!columns.some((item) => item.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+ensureColumn("ai_plans", "selected_generation_id", "INTEGER");
+ensureColumn("generations", "prompt", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("generations", "negative_prompt", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("generations", "input_tokens", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("generations", "output_tokens", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("generations", "input_cost_per_million", "REAL NOT NULL DEFAULT 0");
+ensureColumn("generations", "output_cost_per_million", "REAL NOT NULL DEFAULT 0");
+ensureColumn("generations", "provider_job_id", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("generations", "seed", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("generations", "version_number", "INTEGER");
+ensureColumn("generations", "platform_id", "INTEGER");
+ensureColumn("generations", "platform_name", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("generations", "token_count", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("generations", "token_price_snapshot", "REAL NOT NULL DEFAULT 0");
+ensureColumn("generations", "created_by", "INTEGER");
+ensureColumn("generations", "updated_at", "TEXT");
+db.exec("CREATE INDEX IF NOT EXISTS ai_plans_selected_generation_idx ON ai_plans(selected_generation_id)");
+
+const defaultGenerationModels = ["Seedance 2.5", "Seedance 2.0", "Seedance 2.0 Fast", "Kling 3.0", "Gemini Omni", "LTX"];
+const defaultGenerationPlatforms = ["ComfyUI", "Higgsfield", "Vidax"];
+const defaultGenerationResourceRoles = [
+  "Output", "First Frame", "Last Frame", "Depth Map", "Reference Video", "Reference Image",
+  "Motion Reference", "Mask", "Control Pose", "Audio Reference", "Other Input"
+];
+
+const seedCatalogs = db.transaction(() => {
+  const insertModel = db.prepare("INSERT OR IGNORE INTO generation_models (name) VALUES (?)");
+  defaultGenerationModels.forEach((name) => insertModel.run(name));
+  const insertPlatform = db.prepare("INSERT OR IGNORE INTO generation_platforms (name, token_price) VALUES (?, 0)");
+  defaultGenerationPlatforms.forEach((name) => insertPlatform.run(name));
+  const insertRole = db.prepare("INSERT OR IGNORE INTO generation_resource_roles (name, sort_order) VALUES (?, ?)");
+  defaultGenerationResourceRoles.forEach((name, index) => insertRole.run(name, index + 1));
+});
+
+seedCatalogs();
 
 function seedInitialAdmin() {
   const userCount = db.prepare("SELECT COUNT(*) AS count FROM users").get().count;
@@ -234,6 +328,47 @@ function seedDatabase() {
 
 seedDatabase();
 
+const backfillVersionNumbers = db.transaction(() => {
+  const generations = db.prepare("SELECT id, plan_id, prompt_version, version_number FROM generations ORDER BY plan_id, id").all();
+  const usedByPlan = new Map();
+  const update = db.prepare("UPDATE generations SET version_number = ?, label = ?, prompt_version = ? WHERE id = ?");
+  generations.forEach((generation) => {
+    if (!usedByPlan.has(generation.plan_id)) usedByPlan.set(generation.plan_id, new Set());
+    const used = usedByPlan.get(generation.plan_id);
+    let version = Number(generation.version_number);
+    if (!Number.isSafeInteger(version) || version < 1 || used.has(version)) {
+      const parsed = Number(String(generation.prompt_version || "").match(/\d+/)?.[0]);
+      version = Number.isSafeInteger(parsed) && parsed > 0 && !used.has(parsed) ? parsed : 1;
+      while (used.has(version)) version += 1;
+    }
+    used.add(version);
+    const versionLabel = `v${version}`;
+    update.run(version, versionLabel, versionLabel, generation.id);
+  });
+});
+
+backfillVersionNumbers();
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS generations_plan_version_idx ON generations(plan_id, version_number)");
+
+db.exec(`
+  UPDATE generations
+  SET prompt = COALESCE(NULLIF(prompt, ''), (SELECT prompt FROM ai_plans WHERE ai_plans.id = generations.plan_id), ''),
+      negative_prompt = COALESCE(NULLIF(negative_prompt, ''), (SELECT negative_prompt FROM ai_plans WHERE ai_plans.id = generations.plan_id), ''),
+      updated_at = COALESCE(updated_at, created_at)
+  WHERE prompt = '' OR negative_prompt = '' OR updated_at IS NULL;
+
+  UPDATE ai_plans
+  SET selected_generation_id = (
+    SELECT generations.id
+    FROM generations
+    WHERE generations.plan_id = ai_plans.id
+    ORDER BY generations.id DESC
+    LIMIT 1
+  )
+  WHERE selected_generation_id IS NULL
+    AND EXISTS (SELECT 1 FROM generations WHERE generations.plan_id = ai_plans.id);
+`);
+
 function normalizePlan(plan) {
   return {
     ...plan,
@@ -250,11 +385,14 @@ export function getDashboard() {
 export function getPlan(id) {
   const plan = db.prepare("SELECT * FROM ai_plans WHERE id = ?").get(id);
   if (!plan) return null;
-  const generations = db.prepare("SELECT * FROM generations WHERE plan_id = ? ORDER BY id DESC").all(id);
+  const generations = listGenerations(id);
   const resources = listResources(id);
+  const selectedGeneration = generations.find((generation) => generation.id === plan.selected_generation_id) || null;
   return {
     ...normalizePlan(plan),
     generations,
+    selected_generation: selectedGeneration,
+    generation_count: generations.length,
     resources,
     resource_count: resources.length,
     resource_bytes: resources.reduce((total, resource) => total + resource.size_bytes, 0)
@@ -263,7 +401,8 @@ export function getPlan(id) {
 
 export function listResources(planId) {
   return db.prepare(`
-    SELECT r.*, u.display_name AS uploaded_by_name, u.username AS uploaded_by_username
+    SELECT r.*, u.display_name AS uploaded_by_name, u.username AS uploaded_by_username,
+           (SELECT COUNT(*) FROM generation_resources gr WHERE gr.resource_id = r.id) AS generation_usage_count
     FROM resources r
     LEFT JOIN users u ON u.id = r.uploaded_by
     WHERE r.plan_id = ?
@@ -276,11 +415,291 @@ export function listResources(planId) {
 
 export function getResource(id) {
   return db.prepare(`
-    SELECT r.*, u.display_name AS uploaded_by_name, u.username AS uploaded_by_username
+    SELECT r.*, u.display_name AS uploaded_by_name, u.username AS uploaded_by_username,
+           (SELECT COUNT(*) FROM generation_resources gr WHERE gr.resource_id = r.id) AS generation_usage_count
     FROM resources r
     LEFT JOIN users u ON u.id = r.uploaded_by
     WHERE r.id = ?
   `).get(id);
+}
+
+const catalogTables = {
+  models: "generation_models",
+  platforms: "generation_platforms",
+  resource_roles: "generation_resource_roles"
+};
+
+function catalogTable(type) {
+  const table = catalogTables[type];
+  if (!table) throw new Error("Invalid catalog type");
+  return table;
+}
+
+function catalogRows(type, includeInactive = false) {
+  const table = catalogTable(type);
+  const ordering = type === "resource_roles" ? "sort_order, id" : "active DESC, name COLLATE NOCASE";
+  return db.prepare(`SELECT * FROM ${table} ${includeInactive ? "" : "WHERE active = 1"} ORDER BY ${ordering}`).all()
+    .map((item) => ({ ...item, active: Boolean(item.active) }));
+}
+
+export function getGenerationCatalogs({ includeInactive = false } = {}) {
+  return {
+    models: catalogRows("models", includeInactive),
+    platforms: catalogRows("platforms", includeInactive),
+    resource_roles: catalogRows("resource_roles", includeInactive)
+  };
+}
+
+function catalogName(value) {
+  const name = String(value || "").trim().replace(/\s+/g, " ").slice(0, 100);
+  if (!name) throw new Error("Name is required");
+  return name;
+}
+
+export function createCatalogItem(type, input) {
+  const table = catalogTable(type);
+  const name = catalogName(input.name);
+  try {
+    let result;
+    if (type === "platforms") {
+      const tokenPrice = finiteNumber(input.token_price, 0, 0, 1_000_000, "Token price");
+      result = db.prepare(`INSERT INTO ${table} (name, token_price) VALUES (?, ?)`).run(name, tokenPrice);
+    } else if (type === "resource_roles") {
+      const nextOrder = db.prepare(`SELECT COALESCE(MAX(sort_order), 0) + 1 AS value FROM ${table}`).get().value;
+      result = db.prepare(`INSERT INTO ${table} (name, sort_order) VALUES (?, ?)`).run(name, nextOrder);
+    } else {
+      result = db.prepare(`INSERT INTO ${table} (name) VALUES (?)`).run(name);
+    }
+    return db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(Number(result.lastInsertRowid));
+  } catch (error) {
+    if (error.code === "SQLITE_CONSTRAINT_UNIQUE") throw new Error("That name is already in this catalog");
+    throw error;
+  }
+}
+
+export function updateCatalogItem(type, id, input) {
+  const table = catalogTable(type);
+  const current = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
+  if (!current) throw new Error("Catalog item not found");
+  const name = input.name === undefined ? current.name : catalogName(input.name);
+  const active = input.active === undefined ? Boolean(current.active) : Boolean(input.active);
+  if (type === "resource_roles" && current.name === "Output" && (name !== "Output" || !active)) {
+    throw new Error("Output is a required system resource type and cannot be renamed or removed");
+  }
+  if (!active && current.active) {
+    const activeCount = db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE active = 1`).get().count;
+    if (activeCount <= 1) throw new Error("Keep at least one active option in this catalog");
+  }
+  const tokenPrice = type === "platforms"
+    ? finiteNumber(input.token_price, current.token_price, 0, 1_000_000, "Token price")
+    : null;
+  try {
+    if (type === "platforms") {
+      db.prepare(`UPDATE ${table} SET name = ?, token_price = ?, active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(name, tokenPrice, active ? 1 : 0, id);
+    } else {
+      db.prepare(`UPDATE ${table} SET name = ?, active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(name, active ? 1 : 0, id);
+    }
+  } catch (error) {
+    if (error.code === "SQLITE_CONSTRAINT_UNIQUE") throw new Error("That name is already in this catalog");
+    throw error;
+  }
+  return db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
+}
+
+function listGenerationResources(generationId) {
+  return db.prepare(`
+    SELECT r.*, gr.role, u.display_name AS uploaded_by_name, u.username AS uploaded_by_username,
+           (SELECT COUNT(*) FROM generation_resources usage WHERE usage.resource_id = r.id) AS generation_usage_count
+    FROM generation_resources gr
+    JOIN resources r ON r.id = gr.resource_id
+    LEFT JOIN users u ON u.id = r.uploaded_by
+    WHERE gr.generation_id = ?
+    ORDER BY CASE gr.role
+      WHEN 'Output' THEN 1 WHEN 'First Frame' THEN 2 WHEN 'Last Frame' THEN 3
+      WHEN 'Depth Map' THEN 4 WHEN 'Reference Video' THEN 5 WHEN 'Reference Image' THEN 6 ELSE 7 END,
+      r.id DESC
+  `).all(generationId);
+}
+
+function normalizeGeneration(generation) {
+  if (!generation) return null;
+  const tokenCount = Number(generation.token_count || 0);
+  const tokenPrice = Number(generation.token_price_snapshot || 0);
+  const legacyInputTokens = Number(generation.input_tokens || 0);
+  const legacyOutputTokens = Number(generation.output_tokens || 0);
+  const legacyInputRate = Number(generation.input_cost_per_million || 0);
+  const legacyOutputRate = Number(generation.output_cost_per_million || 0);
+  const hasPlatformSnapshot = Boolean(generation.platform_name);
+  const generationCost = hasPlatformSnapshot
+    ? tokenCount * tokenPrice
+    : ((legacyInputTokens * legacyInputRate) + (legacyOutputTokens * legacyOutputRate)) / 1_000_000;
+  const versionNumber = Number(generation.version_number) || Number(String(generation.prompt_version || "").match(/\d+/)?.[0]) || generation.id;
+  return {
+    ...generation,
+    version_number: versionNumber,
+    version_label: `v${versionNumber}`,
+    total_tokens: hasPlatformSnapshot ? tokenCount : legacyInputTokens + legacyOutputTokens,
+    generation_cost: generationCost,
+    cost_is_legacy: !hasPlatformSnapshot && (legacyInputTokens > 0 || legacyOutputTokens > 0),
+    resources: listGenerationResources(generation.id)
+  };
+}
+
+export function listGenerations(planId) {
+  return db.prepare(`
+    SELECT g.*, u.display_name AS created_by_name
+    FROM generations g
+    LEFT JOIN users u ON u.id = g.created_by
+    WHERE g.plan_id = ?
+    ORDER BY g.created_at DESC, g.id DESC
+  `).all(planId).map(normalizeGeneration);
+}
+
+export function getGeneration(id) {
+  return normalizeGeneration(db.prepare(`
+    SELECT g.*, u.display_name AS created_by_name
+    FROM generations g
+    LEFT JOIN users u ON u.id = g.created_by
+    WHERE g.id = ?
+  `).get(id));
+}
+
+function finiteNumber(value, fallback, minimum, maximum, label) {
+  const number = Number(value ?? fallback);
+  if (!Number.isFinite(number) || number < minimum || number > maximum) throw new Error(`${label} is invalid`);
+  return number;
+}
+
+function generationFields(planId, input, current = {}) {
+  const versionNumber = finiteNumber(input.version_number, current.version_number, 1, 1_000_000, "Generation version");
+  if (!Number.isSafeInteger(versionNumber)) throw new Error("Generation version must be a whole number");
+  const duplicate = db.prepare("SELECT id FROM generations WHERE plan_id = ? AND version_number = ? AND id <> ?").get(planId, versionNumber, current.id || 0);
+  if (duplicate) throw new Error(`Generation v${versionNumber} already exists for this shot`);
+
+  const model = String(input.model ?? current.model ?? "").trim().slice(0, 120);
+  if (!model) throw new Error("AI model is required");
+  if (!current.id || model !== current.model) {
+    const availableModel = db.prepare("SELECT id FROM generation_models WHERE name = ? COLLATE NOCASE AND active = 1").get(model);
+    if (!availableModel) throw new Error("Select an available AI model");
+  }
+
+  const tokenCount = finiteNumber(input.token_count, current.token_count || 0, 0, 1_000_000_000_000, "Token count");
+  if (!Number.isSafeInteger(tokenCount)) throw new Error("Token count must be a whole number");
+
+  const requestedPlatformId = input.platform_id === undefined ? Number(current.platform_id || 0) : Number(input.platform_id);
+  let platformId = Number(current.platform_id || 0) || null;
+  let platformName = String(current.platform_name || "");
+  let tokenPriceSnapshot = Number(current.token_price_snapshot || 0);
+  const platformChanged = input.platform_id !== undefined && requestedPlatformId !== Number(current.platform_id || 0);
+  if (!current.id || platformChanged) {
+    const platform = db.prepare("SELECT * FROM generation_platforms WHERE id = ? AND active = 1").get(requestedPlatformId);
+    if (!platform) throw new Error("Select an available generation platform");
+    platformId = platform.id;
+    platformName = platform.name;
+    tokenPriceSnapshot = Number(platform.token_price || 0);
+  }
+
+  const versionLabel = `v${versionNumber}`;
+  return {
+    label: versionLabel,
+    prompt_version: versionLabel,
+    version_number: versionNumber,
+    model,
+    notes: String(input.notes ?? current.notes ?? "").trim().slice(0, 5000),
+    prompt: String(input.prompt ?? current.prompt ?? "").trim().slice(0, 20000),
+    negative_prompt: String(input.negative_prompt ?? current.negative_prompt ?? "").trim().slice(0, 10000),
+    platform_id: platformId,
+    platform_name: platformName,
+    token_count: tokenCount,
+    token_price_snapshot: tokenPriceSnapshot,
+    seed: String(input.seed ?? current.seed ?? "").trim().slice(0, 240)
+  };
+}
+
+function generationLinks(planId, links, generationId = null) {
+  if (!Array.isArray(links)) return [];
+  const seen = new Set();
+  const activeRoles = new Set(catalogRows("resource_roles").map((item) => item.name));
+  const existingRoles = generationId
+    ? new Map(db.prepare("SELECT resource_id, role FROM generation_resources WHERE generation_id = ?").all(generationId).map((item) => [item.resource_id, item.role]))
+    : new Map();
+  return links.map((link) => {
+    const resourceId = Number(link.resource_id);
+    const role = String(link.role || "Other Input");
+    if (!Number.isSafeInteger(resourceId) || resourceId < 1) throw new Error("Invalid generation resource");
+    if (!activeRoles.has(role) && existingRoles.get(resourceId) !== role) throw new Error("Select an available generation resource role");
+    if (seen.has(resourceId)) throw new Error("A resource can only have one role in a generation");
+    seen.add(resourceId);
+    const resource = db.prepare("SELECT id, plan_id FROM resources WHERE id = ?").get(resourceId);
+    if (!resource || resource.plan_id !== planId) throw new Error("Generation resources must belong to this shot");
+    return { resourceId, role };
+  });
+}
+
+function replaceGenerationResources(generationId, links) {
+  db.prepare("DELETE FROM generation_resources WHERE generation_id = ?").run(generationId);
+  const insert = db.prepare("INSERT INTO generation_resources (generation_id, resource_id, role) VALUES (?, ?, ?)");
+  links.forEach((link) => insert.run(generationId, link.resourceId, link.role));
+}
+
+export function createGeneration(planId, input, createdBy) {
+  const plan = db.prepare("SELECT * FROM ai_plans WHERE id = ?").get(planId);
+  if (!plan) throw new Error("Shot not found");
+  const fields = generationFields(planId, input, { prompt: plan.prompt, negative_prompt: plan.negative_prompt, model: plan.model });
+  const links = generationLinks(planId, input.resources);
+
+  const generationId = db.transaction(() => {
+    const result = db.prepare(`
+      INSERT INTO generations (
+        plan_id, label, prompt_version, version_number, model, notes, prompt, negative_prompt,
+        platform_id, platform_name, token_count, token_price_snapshot, seed, created_by
+      ) VALUES (
+        @plan_id, @label, @prompt_version, @version_number, @model, @notes, @prompt, @negative_prompt,
+        @platform_id, @platform_name, @token_count, @token_price_snapshot, @seed, @created_by
+      )
+    `).run({ plan_id: planId, created_by: createdBy, ...fields });
+    const id = Number(result.lastInsertRowid);
+    replaceGenerationResources(id, links);
+    db.prepare(`
+      UPDATE ai_plans
+      SET experiments_count = experiments_count + 1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(planId);
+    return id;
+  })();
+
+  return getGeneration(generationId);
+}
+
+export function updateGeneration(id, input) {
+  const current = db.prepare("SELECT * FROM generations WHERE id = ?").get(id);
+  if (!current) throw new Error("Generation not found");
+  const fields = generationFields(current.plan_id, input, current);
+  const links = input.resources === undefined ? null : generationLinks(current.plan_id, input.resources, id);
+
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE generations SET
+        label = @label, prompt_version = @prompt_version, version_number = @version_number,
+        model = @model, notes = @notes, prompt = @prompt, negative_prompt = @negative_prompt,
+        platform_id = @platform_id, platform_name = @platform_name, token_count = @token_count,
+        token_price_snapshot = @token_price_snapshot, seed = @seed, updated_at = CURRENT_TIMESTAMP
+      WHERE id = @id
+    `).run({ id, ...fields });
+    if (links) replaceGenerationResources(id, links);
+    db.prepare("UPDATE ai_plans SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(current.plan_id);
+  })();
+
+  return getGeneration(id);
+}
+
+export function selectGeneration(planId, generationId) {
+  const plan = db.prepare("SELECT id FROM ai_plans WHERE id = ?").get(planId);
+  if (!plan) throw new Error("Shot not found");
+  const generation = db.prepare("SELECT id FROM generations WHERE id = ? AND plan_id = ?").get(generationId, planId);
+  if (!generation) throw new Error("Generation does not belong to this shot");
+  db.prepare("UPDATE ai_plans SET selected_generation_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(generationId, planId);
+  return getPlan(planId);
 }
 
 export function createResource(input) {
@@ -331,6 +750,10 @@ export function createPlan(input) {
 
   const project = db.prepare("SELECT id FROM projects ORDER BY id LIMIT 1").get();
   const status = allowedStatuses.has(input.status) ? input.status : "Idea";
+  const model = String(input.model || "Not selected").trim();
+  if (model !== "Not selected" && !db.prepare("SELECT id FROM generation_models WHERE name = ? COLLATE NOCASE AND active = 1").get(model)) {
+    throw new Error("Select an available AI model");
+  }
   const imagePositions = ["0% 0%", "50% 0%", "100% 0%", "0% 100%", "50% 100%", "100% 100%"];
   const count = db.prepare("SELECT COUNT(*) AS count FROM ai_plans").get().count;
 
@@ -342,7 +765,7 @@ export function createPlan(input) {
   `).run(
     project.id, shotCode, title, String(input.description || ""), status,
     String(input.media_type || "Video"), String(input.owner || "Unassigned"),
-    String(input.model || "Not selected"), input.due_date || null,
+    model, input.due_date || null,
     String(input.priority || "Medium"), String(input.next_action || "Complete creative brief"),
     String(input.prompt || ""), String(input.aspect_ratio || "16:9"),
     String(input.duration || "5 sec"), String(input.tags || ""),
@@ -362,6 +785,15 @@ export function updatePlanStatus(id, status) {
 export function updatePlan(id, input) {
   const current = db.prepare("SELECT * FROM ai_plans WHERE id = ?").get(id);
   if (!current) throw new Error("Plan not found");
+
+  if (Object.hasOwn(input, "model")) {
+    const requestedModel = String(input.model || "Not selected").trim();
+    if (requestedModel !== current.model && requestedModel !== "Not selected"
+      && !db.prepare("SELECT id FROM generation_models WHERE name = ? COLLATE NOCASE AND active = 1").get(requestedModel)) {
+      throw new Error("Select an available AI model");
+    }
+    input = { ...input, model: requestedModel };
+  }
 
   const fields = ["title", "description", "owner", "model", "quality", "due_date", "priority", "next_action", "issue", "prompt", "negative_prompt", "aspect_ratio", "duration", "tags"];
   const changes = {};

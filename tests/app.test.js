@@ -103,6 +103,41 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   const accountAccess = await request("/api/users", { cookie: creatorCookie });
   assert.equal(accountAccess.status, 403);
 
+  const catalogAccess = await request("/api/admin/catalogs", { cookie: creatorCookie });
+  assert.equal(catalogAccess.status, 403);
+
+  const catalogsResponse = await request("/api/admin/catalogs", { cookie: adminCookie });
+  assert.equal(catalogsResponse.status, 200);
+  const catalogs = await catalogsResponse.json();
+  assert.deepEqual(catalogs.models.filter((item) => item.active).map((item) => item.name).sort(), [
+    "Gemini Omni", "Kling 3.0", "LTX", "Seedance 2.0", "Seedance 2.0 Fast", "Seedance 2.5"
+  ].sort());
+  assert.deepEqual(catalogs.platforms.filter((item) => item.active).map((item) => item.name).sort(), ["ComfyUI", "Higgsfield", "Vidax"].sort());
+
+  const outputRole = catalogs.resource_roles.find((item) => item.name === "Output");
+  const removeOutputResponse = await request(`/api/admin/catalogs/resource_roles/${outputRole.id}`, {
+    method: "PATCH",
+    cookie: adminCookie,
+    body: { active: false }
+  });
+  assert.equal(removeOutputResponse.status, 400);
+
+  const higgsfield = catalogs.platforms.find((item) => item.name === "Higgsfield");
+  const priceResponse = await request(`/api/admin/catalogs/platforms/${higgsfield.id}`, {
+    method: "PATCH",
+    cookie: adminCookie,
+    body: { token_price: 0.25 }
+  });
+  assert.equal(priceResponse.status, 200);
+
+  const roleResponse = await request("/api/admin/catalogs/resource_roles", {
+    method: "POST",
+    cookie: adminCookie,
+    body: { name: "Style Reference" }
+  });
+  assert.equal(roleResponse.status, 201);
+  const styleReferenceRole = await roleResponse.json();
+
   const planResponse = await request("/api/plans", {
     method: "POST",
     cookie: creatorCookie,
@@ -110,7 +145,8 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
       shot_code: "DCK-001",
       title: "Docker integration shot",
       description: "Created by the containerized integration test",
-      media_type: "Video"
+      media_type: "Video",
+      model: "Seedance 2.5"
     }
   });
   assert.equal(planResponse.status, 201);
@@ -151,6 +187,141 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(resourceRange.headers.get("content-range"), `bytes 0-3/${resourceBytes.byteLength}`);
   assert.deepEqual(new Uint8Array(await resourceRange.arrayBuffer()), resourceBytes.slice(0, 4));
 
+  const outputForm = new FormData();
+  outputForm.append("category", "Generation");
+  outputForm.append("notes", "Primary generated output");
+  const outputBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 79, 85, 84, 80, 85, 84]);
+  outputForm.append("file", new Blob([outputBytes], { type: "image/png" }), "generation-output.png");
+  const outputResponse = await fetch(`${origin}/api/plans/${plan.id}/resources`, {
+    method: "POST",
+    headers: { cookie: creatorCookie },
+    body: outputForm
+  });
+  assert.equal(outputResponse.status, 201);
+  const outputResource = await outputResponse.json();
+
+  const firstGenerationResponse = await request(`/api/plans/${plan.id}/generations`, {
+    method: "POST",
+    cookie: creatorCookie,
+    body: {
+      version_number: 1,
+      model: "Seedance 2.5",
+      prompt: "A precise test generation prompt",
+      negative_prompt: "flicker, watermark",
+      notes: "First complete candidate",
+      platform_id: higgsfield.id,
+      token_count: 12,
+      seed: "12345",
+      resources: [
+        { resource_id: outputResource.id, role: "Output" },
+        { resource_id: resource.id, role: "First Frame" }
+      ]
+    }
+  });
+  assert.equal(firstGenerationResponse.status, 201);
+  const firstGeneration = (await firstGenerationResponse.json()).generation;
+  assert.equal(firstGeneration.version_label, "v1");
+  assert.equal(firstGeneration.label, "v1");
+  assert.equal(firstGeneration.generation_cost, 3);
+  assert.equal(firstGeneration.total_tokens, 12);
+  assert.equal(firstGeneration.platform_name, "Higgsfield");
+  assert.equal(firstGeneration.token_price_snapshot, 0.25);
+  assert.equal(firstGeneration.resources.length, 2);
+  assert.equal(firstGeneration.resources.find((item) => item.role === "Output").id, outputResource.id);
+
+  const duplicateVersionResponse = await request(`/api/plans/${plan.id}/generations`, {
+    method: "POST",
+    cookie: creatorCookie,
+    body: { version_number: 1, model: "Seedance 2.0", platform_id: higgsfield.id, token_count: 1 }
+  });
+  assert.equal(duplicateVersionResponse.status, 400);
+  assert.match((await duplicateVersionResponse.json()).error, /v1 already exists/);
+
+  const newPriceResponse = await request(`/api/admin/catalogs/platforms/${higgsfield.id}`, {
+    method: "PATCH",
+    cookie: adminCookie,
+    body: { token_price: 0.5 }
+  });
+  assert.equal(newPriceResponse.status, 200);
+
+  const seedanceModel = catalogs.models.find((item) => item.name === "Seedance 2.5");
+  const removeModelResponse = await request(`/api/admin/catalogs/models/${seedanceModel.id}`, {
+    method: "PATCH",
+    cookie: adminCookie,
+    body: { active: false }
+  });
+  assert.equal(removeModelResponse.status, 200);
+
+  const secondGenerationResponse = await request(`/api/plans/${plan.id}/generations`, {
+    method: "POST",
+    cookie: creatorCookie,
+    body: {
+      version_number: 2,
+      model: "Seedance 2.0",
+      prompt: "A revised test generation prompt",
+      platform_id: higgsfield.id,
+      token_count: 12,
+      resources: [
+        { resource_id: resource.id, role: "Style Reference" },
+        { resource_id: outputResource.id, role: "Reference Image" }
+      ]
+    }
+  });
+  assert.equal(secondGenerationResponse.status, 201);
+  const secondGeneration = (await secondGenerationResponse.json()).generation;
+  assert.equal(secondGeneration.version_label, "v2");
+  assert.equal(secondGeneration.generation_cost, 6);
+  assert.equal(secondGeneration.token_price_snapshot, 0.5);
+  assert.equal(secondGeneration.resources.find((item) => item.id === resource.id).role, "Style Reference");
+
+  const updateGenerationResponse = await request(`/api/generations/${secondGeneration.id}`, {
+    method: "PATCH",
+    cookie: creatorCookie,
+    body: {
+      notes: "Reused the v1 first frame and output reference"
+    }
+  });
+  assert.equal(updateGenerationResponse.status, 200);
+  assert.match((await updateGenerationResponse.json()).generation.notes, /Reused the v1/);
+
+  const renamedPlatformResponse = await request(`/api/admin/catalogs/platforms/${higgsfield.id}`, {
+    method: "PATCH",
+    cookie: adminCookie,
+    body: { name: "Higgsfield Studio", token_price: 0.75 }
+  });
+  assert.equal(renamedPlatformResponse.status, 200);
+  const removeRoleResponse = await request(`/api/admin/catalogs/resource_roles/${styleReferenceRole.id}`, {
+    method: "PATCH",
+    cookie: adminCookie,
+    body: { active: false }
+  });
+  assert.equal(removeRoleResponse.status, 200);
+
+  const historyResponse = await request(`/api/plans/${plan.id}`, { cookie: creatorCookie });
+  assert.equal(historyResponse.status, 200);
+  const history = await historyResponse.json();
+  const historicalFirst = history.generations.find((item) => item.id === firstGeneration.id);
+  const historicalSecond = history.generations.find((item) => item.id === secondGeneration.id);
+  assert.equal(historicalFirst.model, "Seedance 2.5");
+  assert.equal(historicalFirst.platform_name, "Higgsfield");
+  assert.equal(historicalFirst.token_price_snapshot, 0.25);
+  assert.equal(historicalFirst.generation_cost, 3);
+  assert.equal(historicalSecond.platform_name, "Higgsfield");
+  assert.equal(historicalSecond.token_price_snapshot, 0.5);
+  assert.equal(historicalSecond.generation_cost, 6);
+  assert.equal(historicalSecond.resources.find((item) => item.id === resource.id).role, "Style Reference");
+
+  const selectGenerationResponse = await request(`/api/plans/${plan.id}/selected-generation`, {
+    method: "PATCH",
+    cookie: creatorCookie,
+    body: { generation_id: firstGeneration.id }
+  });
+  assert.equal(selectGenerationResponse.status, 200);
+  const selectedPlan = await selectGenerationResponse.json();
+  assert.equal(selectedPlan.selected_generation_id, firstGeneration.id);
+  assert.equal(selectedPlan.selected_generation.id, firstGeneration.id);
+  assert.equal(selectedPlan.resources.find((item) => item.id === resource.id).generation_usage_count, 2);
+
   const forbiddenApproval = await request(`/api/plans/${plan.id}/status`, {
     method: "PATCH",
     cookie: creatorCookie,
@@ -181,7 +352,12 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(shotPage.status, 200);
   const html = await shotPage.text();
   assert.match(html, /Docker integration shot/);
-  assert.match(html, /Media & production files/);
+  assert.match(html, /Current final version/);
+  assert.match(html, /Generation timeline/);
+  assert.match(html, /Upload once, reuse everywhere/);
+  assert.match(html, /v1/);
+  assert.match(html, /Higgsfield/);
+  assert.match(html, /generation-output\.png/);
   assert.match(html, /reference-frame\.png/);
   assert.match(html, /\/js\/plan-detail\.js/);
 

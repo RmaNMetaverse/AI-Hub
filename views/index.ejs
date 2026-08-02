@@ -39,6 +39,7 @@
         <nav class="mt-2 space-y-1">
           <% if (permissions.canManageAccounts) { %>
           <button id="teamNavButton" class="nav-item"><i data-lucide="users" class="h-[17px] w-[17px]"></i>Accounts<span class="ml-auto rounded-full bg-acid/10 px-1.5 py-0.5 text-[8px] uppercase tracking-wider text-acid">Admin</span></button>
+          <button id="catalogsNavButton" class="nav-item"><i data-lucide="sliders-horizontal" class="h-[17px] w-[17px]"></i>Generation settings</button>
           <% } %>
           <button class="nav-item"><i data-lucide="activity" class="h-[17px] w-[17px]"></i>Activity</button>
         </nav>
@@ -65,7 +66,7 @@
               <button id="accountButton" class="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-amber-200 to-orange-700 text-xs font-bold text-black ring-2 ring-transparent transition hover:ring-white/20" aria-label="Open account menu"><%= currentUser.display_name.split(/\s+/).map(part => part[0]).join('').slice(0,2).toUpperCase() %></button>
               <div id="accountMenu" class="absolute right-0 top-12 hidden w-64 overflow-hidden rounded-2xl border border-white/10 bg-[#151619] p-2 shadow-float">
                 <div class="border-b border-white/[0.07] px-3 py-3"><div class="truncate text-sm font-semibold text-zinc-200"><%= currentUser.display_name %></div><div class="mt-1 flex items-center gap-2 text-[10px] text-zinc-600"><span>@<%= currentUser.username %></span><span>·</span><span class="text-acid"><%= currentUser.role %></span></div></div>
-                <% if (permissions.canManageAccounts) { %><button id="manageAccountsButton" class="nav-item mt-1"><i data-lucide="users-round" class="h-4 w-4"></i>Manage accounts</button><% } %>
+                <% if (permissions.canManageAccounts) { %><button id="manageAccountsButton" class="nav-item mt-1"><i data-lucide="users-round" class="h-4 w-4"></i>Manage accounts</button><button id="manageCatalogsButton" class="nav-item"><i data-lucide="sliders-horizontal" class="h-4 w-4"></i>Generation settings</button><% } %>
                 <button id="logoutButton" class="nav-item text-red-300/70 hover:text-red-200"><i data-lucide="log-out" class="h-4 w-4"></i>Sign out</button>
               </div>
             </div>
@@ -134,6 +135,20 @@
     </div>
     <% } %>
 
+    <% if (permissions.canManageAccounts) { %>
+    <div id="catalogsModal" class="pointer-events-none fixed inset-0 z-[66] hidden place-items-center p-4" aria-hidden="true">
+      <button id="catalogsModalBackdrop" class="modal-backdrop absolute inset-0 bg-black/80" aria-label="Close generation settings"></button>
+      <div id="catalogsModalCard" class="modal-card relative z-10 flex max-h-[92vh] w-full max-w-[1040px] flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#111214] shadow-float">
+        <header class="flex items-start justify-between border-b border-white/[0.07] px-6 py-5"><div><div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-acid">Admin controls</div><h2 class="mt-2 text-2xl font-semibold tracking-tight">Generation settings</h2><p class="mt-1 text-xs text-zinc-500">Manage future form options without changing historical shots or generations.</p></div><button id="closeCatalogsModalButton" class="icon-button" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></header>
+        <div class="flex gap-1 overflow-x-auto border-b border-white/[0.07] px-5 py-3"><button class="catalog-tab shot-tab active rounded-xl px-4 py-2 text-xs font-semibold" data-catalog="models">AI models</button><button class="catalog-tab shot-tab rounded-xl px-4 py-2 text-xs font-semibold text-zinc-600" data-catalog="platforms">Generation platforms</button><button class="catalog-tab shot-tab rounded-xl px-4 py-2 text-xs font-semibold text-zinc-600" data-catalog="resource_roles">Resource types</button></div>
+        <div class="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[320px_1fr]">
+          <section class="border-b border-white/[0.07] p-5 lg:border-b-0 lg:border-r sm:p-6"><div id="catalogFormEyebrow" class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Add AI model</div><form id="catalogItemForm" class="mt-5 space-y-4"><label><span class="field-label">Name</span><input name="name" class="field" maxlength="100" required /></label><label id="catalogPriceField" class="hidden"><span class="field-label">Price per token ($)</span><input name="token_price" type="number" min="0" step="0.000001" class="field" value="0" /><span class="mt-2 block text-[10px] leading-4 text-zinc-700">Saved generations keep this price as a permanent snapshot.</span></label><button type="submit" class="primary-button h-11 w-full"><i data-lucide="plus" class="h-4 w-4"></i><span>Add option</span></button></form><div class="mt-5 rounded-2xl border border-white/[0.06] bg-black/20 p-4 text-[11px] leading-5 text-zinc-600"><i data-lucide="history" class="mr-1 inline h-3.5 w-3.5 text-acid"></i>Renaming or removing an option never rewrites an existing generation. Output remains a protected core resource type.</div></section>
+          <section class="min-h-0 p-5 sm:p-6"><div class="flex items-center justify-between"><div><div id="catalogListEyebrow" class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Available models</div><h3 id="catalogListTitle" class="mt-1 text-lg font-semibold">AI model catalog</h3></div><span id="catalogItemCount" class="rounded-full border border-white/[0.08] px-3 py-1.5 text-[10px] text-zinc-600"></span></div><div id="catalogItemsList" class="mt-5 space-y-2"></div></section>
+        </div>
+      </div>
+    </div>
+    <% } %>
+
     <div id="newPlanModal" class="pointer-events-none fixed inset-0 z-[60] hidden place-items-center p-4" aria-hidden="true">
       <button id="modalBackdrop" class="modal-backdrop absolute inset-0 bg-black/75" aria-label="Close new plan form"></button>
       <div id="modalCard" class="modal-card relative z-10 max-h-[92vh] w-full max-w-[680px] overflow-y-auto rounded-3xl border border-white/10 bg-[#111214] p-5 shadow-float sm:p-7">
@@ -146,7 +161,7 @@
           <label><span class="field-label">Shot code *</span><input name="shot_code" class="field" placeholder="SC02-SH018" required /></label>
           <label><span class="field-label">Status</span><select name="status" class="field"><option>Idea</option><option>Brief Ready</option><option>Generating</option><option>Review</option></select></label>
           <label><span class="field-label">Media type</span><select name="media_type" class="field"><option>Video</option><option>Image</option><option>Audio</option><option>Voice</option><option>VFX element</option></select></label>
-          <label><span class="field-label">AI model</span><input name="model" class="field" placeholder="Not selected" /></label>
+          <label><span class="field-label">AI model</span><select name="model" class="field"><option>Not selected</option><% generationCatalogs.models.forEach(model => { %><option><%= model.name %></option><% }) %></select></label>
           <label><span class="field-label">Due date</span><input type="date" name="due_date" class="field" /></label>
           <label class="sm:col-span-2"><span class="field-label">Creative brief</span><textarea name="description" class="field min-h-24 resize-y" placeholder="What should this plan achieve in the film?"></textarea></label>
           <label class="sm:col-span-2"><span class="field-label">Starting prompt</span><textarea name="prompt" class="field min-h-28 resize-y" placeholder="Describe subject, environment, camera, lighting, and movement..."></textarea></label>
@@ -165,6 +180,7 @@
       window.__AI_HUB_CURRENT_USER__ = <%- serializedUser %>;
       window.__AI_HUB_PERMISSIONS__ = <%- serializedPermissions %>;
       window.__AI_HUB_ROLES__ = <%- JSON.stringify(roleDefinitions).replaceAll('<', '\\u003c') %>;
+      window.__AI_HUB_GENERATION_CATALOGS__ = <%- JSON.stringify(generationCatalogs).replaceAll('<', '\\u003c') %>;
     </script>
     <script src="/vendor/lucide/lucide.js"></script>
     <script src="/js/app.js" defer></script>

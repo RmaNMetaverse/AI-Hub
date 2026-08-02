@@ -5,17 +5,24 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import {
   createAccount,
+  createCatalogItem,
+  createGeneration,
   createPlan,
   createResource,
   deleteResourceRecord,
   getDashboard,
+  getGenerationCatalogs,
+  getGeneration,
   getPlan,
   getResource,
   listAccounts,
   listResources,
+  selectGeneration,
   updatePlan,
   updatePlanStatus,
   updateAccount,
+  updateCatalogItem,
+  updateGeneration,
   updateResource
 } from "./src/db.js";
 import {
@@ -64,9 +71,15 @@ function resourceForClient(resource) {
 
 function planForClient(plan) {
   if (!plan) return null;
+  const generationForClient = (generation) => generation ? {
+    ...generation,
+    resources: Array.isArray(generation.resources) ? generation.resources.map(resourceForClient) : []
+  } : null;
   return {
     ...plan,
-    resources: Array.isArray(plan.resources) ? plan.resources.map(resourceForClient) : plan.resources
+    resources: Array.isArray(plan.resources) ? plan.resources.map(resourceForClient) : plan.resources,
+    generations: Array.isArray(plan.generations) ? plan.generations.map(generationForClient) : [],
+    selected_generation: generationForClient(plan.selected_generation)
   };
 }
 
@@ -209,11 +222,13 @@ app.get("/storage/thumbnails/cinematic-frames", (request, response) => {
 
 app.get("/", (request, response) => {
   const dashboard = getDashboard();
+  const generationCatalogs = getGenerationCatalogs();
   response.render("index", {
     ...dashboard,
     currentUser: request.user,
     permissions: request.permissions,
     roleDefinitions: ROLE_DEFINITIONS,
+    generationCatalogs,
     serializedPlans: JSON.stringify(dashboard.plans).replaceAll("<", "\\u003c"),
     serializedUser: JSON.stringify(request.user).replaceAll("<", "\\u003c"),
     serializedPermissions: JSON.stringify(request.permissions).replaceAll("<", "\\u003c")
@@ -237,6 +252,7 @@ app.get("/plans/:id", (request, response) => {
   const previousPlan = planIndex > 0 ? orderedPlans[planIndex - 1] : null;
   const nextPlan = planIndex < orderedPlans.length - 1 ? orderedPlans[planIndex + 1] : null;
   const allowedStatuses = allowedStatusesForPlan(request.user, request.permissions, plan);
+  const generationCatalogs = getGenerationCatalogs();
 
   response.render("plan", {
     project: dashboard.project,
@@ -247,6 +263,8 @@ app.get("/plans/:id", (request, response) => {
     permissions: request.permissions,
     allowedStatuses,
     resourceCategories,
+    generationCatalogs,
+    generationResourceRoles: generationCatalogs.resource_roles.map((item) => item.name),
     maxUploadBytes,
     serializedPlan: JSON.stringify(displayPlan).replaceAll("<", "\\u003c"),
     serializedUser: JSON.stringify(request.user).replaceAll("<", "\\u003c"),
@@ -279,6 +297,9 @@ app.patch("/api/plans/:id/status", (request, response) => {
     if (request.user.role === "Reviewer" && currentPlan.status !== "Review") {
       return response.status(403).json({ error: "Reviewers can only act on plans currently in review" });
     }
+    if (["Approved", "Delivered"].includes(request.body.status) && !currentPlan.selected_generation_id) {
+      return response.status(400).json({ error: "Select a current final generation before approving this shot" });
+    }
     if (!request.permissions.allowedStatuses.includes(request.body.status)) {
       return response.status(403).json({ error: "Your role cannot move a plan to that status" });
     }
@@ -292,6 +313,37 @@ app.patch("/api/plans/:id/status", (request, response) => {
 app.patch("/api/plans/:id", requirePermission("canEditPlans"), (request, response) => {
   try {
     const plan = updatePlan(Number(request.params.id), request.body);
+    response.json(planForClient(plan));
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/plans/:id/generations", requirePermission("canEditPlans"), (request, response) => {
+  try {
+    const generation = createGeneration(Number(request.params.id), request.body, request.user.id);
+    const updatedPlan = planForClient(getPlan(Number(request.params.id)));
+    response.status(201).json({ generation: updatedPlan.generations.find((item) => item.id === generation.id), plan: updatedPlan });
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.patch("/api/generations/:id", requirePermission("canEditPlans"), (request, response) => {
+  try {
+    const generation = getGeneration(Number(request.params.id));
+    if (!generation) return response.status(404).json({ error: "Generation not found" });
+    updateGeneration(generation.id, request.body);
+    const updatedPlan = planForClient(getPlan(generation.plan_id));
+    response.json({ generation: updatedPlan.generations.find((item) => item.id === generation.id), plan: updatedPlan });
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.patch("/api/plans/:id/selected-generation", requirePermission("canEditPlans"), (request, response) => {
+  try {
+    const plan = selectGeneration(Number(request.params.id), Number(request.body.generation_id));
     response.json(planForClient(plan));
   } catch (error) {
     response.status(400).json({ error: error.message });
@@ -454,6 +506,26 @@ app.patch("/api/users/:id", requirePermission("canManageAccounts"), (request, re
     if (role !== undefined && !Object.hasOwn(ROLE_DEFINITIONS, role)) throw new Error("Invalid role");
     const user = updateAccount(Number(request.params.id), { role, active: request.body.active });
     response.json(user);
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.get("/api/admin/catalogs", requirePermission("canManageAccounts"), (_request, response) => {
+  response.json(getGenerationCatalogs({ includeInactive: true }));
+});
+
+app.post("/api/admin/catalogs/:type", requirePermission("canManageAccounts"), (request, response) => {
+  try {
+    response.status(201).json(createCatalogItem(request.params.type, request.body));
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.patch("/api/admin/catalogs/:type/:id", requirePermission("canManageAccounts"), (request, response) => {
+  try {
+    response.json(updateCatalogItem(request.params.type, Number(request.params.id), request.body));
   } catch (error) {
     response.status(400).json({ error: error.message });
   }

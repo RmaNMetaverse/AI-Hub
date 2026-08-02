@@ -4,8 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#08090a" />
-    <meta name="description" content="<%= plan.title %> · AI Hub shot workspace" />
-    <title><%= plan.shot_code %> · <%= plan.title %> · AI Hub</title>
+    <meta name="description" content="<%= plan.title %> - AI Hub shot workspace" />
+    <title><%= plan.shot_code %> - <%= plan.title %> - AI Hub</title>
     <link rel="stylesheet" href="/css/app.css" />
   </head>
   <body>
@@ -13,7 +13,12 @@
     <% const userInitials = currentUser.display_name.split(/\s+/).map(part => part[0]).join('').slice(0,2).toUpperCase(); %>
     <% const ownerInitials = plan.owner.split(/\s+/).map(part => part[0]).join('').slice(0,2).toUpperCase(); %>
     <% const formatBytes = bytes => { const value = Number(bytes || 0); if (!value) return '0 B'; const units = ['B','KB','MB','GB','TB']; const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1); return `${(value / (1024 ** index)).toFixed(index ? 1 : 0)} ${units[index]}`; }; %>
+    <% const formatCost = value => Number(value || 0) > 0 ? `$${Number(value).toFixed(Number(value) < 0.01 ? 4 : 2)}` : 'Not tracked'; %>
     <% const resourceIcons = { image: 'image', video: 'file-video-2', audio: 'audio-lines', document: 'file-text', archive: 'archive', other: 'file-box' }; %>
+    <% const selectedGeneration = plan.selected_generation; %>
+    <% const selectedOutput = selectedGeneration && selectedGeneration.resources.find(resource => resource.role === 'Output'); %>
+    <% const totalGenerationCost = plan.generations.reduce((total, generation) => total + Number(generation.generation_cost || 0), 0); %>
+
     <div class="min-h-screen bg-[radial-gradient(circle_at_55%_-20%,rgba(214,255,69,0.055),transparent_35%)]">
       <header class="sticky top-0 z-40 flex h-[68px] items-center border-b border-white/[0.07] bg-[#08090a]/85 px-4 backdrop-blur-xl sm:px-6 xl:px-8">
         <a href="/" class="flex items-center gap-3" aria-label="AI Hub production board">
@@ -32,7 +37,7 @@
           <div class="relative">
             <button id="shotAccountButton" class="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-amber-200 to-orange-700 text-xs font-bold text-black" aria-label="Open account menu"><%= userInitials %></button>
             <div id="shotAccountMenu" class="absolute right-0 top-12 hidden w-60 overflow-hidden rounded-2xl border border-white/10 bg-[#151619] p-2 shadow-float">
-              <div class="border-b border-white/[0.07] px-3 py-3"><div class="truncate text-sm font-semibold"><%= currentUser.display_name %></div><div class="mt-1 text-[10px] text-zinc-600">@<%= currentUser.username %> · <span class="text-acid"><%= currentUser.role %></span></div></div>
+              <div class="border-b border-white/[0.07] px-3 py-3"><div class="truncate text-sm font-semibold"><%= currentUser.display_name %></div><div class="mt-1 text-[10px] text-zinc-600">@<%= currentUser.username %> &middot; <span class="text-acid"><%= currentUser.role %></span></div></div>
               <a href="/" class="nav-item mt-1"><i data-lucide="layout-grid" class="h-4 w-4"></i>Production board</a>
               <button id="shotLogoutButton" class="nav-item text-red-300/70 hover:text-red-200"><i data-lucide="log-out" class="h-4 w-4"></i>Sign out</button>
             </div>
@@ -41,69 +46,115 @@
       </header>
 
       <main class="mx-auto max-w-[1560px] px-4 pb-14 pt-5 sm:px-6 xl:px-8">
-        <div class="mb-5 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-700">
-          <a href="/" class="transition hover:text-zinc-400"><%= project.code %></a><i data-lucide="chevron-right" class="h-3 w-3"></i><span><%= plan.sequence_name %></span><i data-lucide="chevron-right" class="h-3 w-3"></i><span class="text-zinc-500"><%= plan.shot_code %></span>
+        <div class="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+          <div>
+            <div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-700">
+              <a href="/" class="transition hover:text-zinc-400"><%= project.code %></a><i data-lucide="chevron-right" class="h-3 w-3"></i><span><%= plan.sequence_name %></span><i data-lucide="chevron-right" class="h-3 w-3"></i><span class="text-zinc-500"><%= plan.shot_code %></span>
+            </div>
+            <div class="mt-3 flex flex-wrap items-center gap-3">
+              <h1 class="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl"><%= plan.title %></h1>
+              <span id="shotStatusPill" class="status-pill <%= statusStyles[plan.status] || statusStyles.Idea %>"><span class="h-1.5 w-1.5 rounded-full bg-current"></span><%= plan.status %></span>
+            </div>
+            <p class="mt-2 max-w-3xl text-sm leading-6 text-zinc-500"><%= plan.description || 'No creative brief has been added yet.' %></p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 text-[10px] text-zinc-600">
+            <span class="rounded-full border border-white/[0.08] px-3 py-1.5"><%= plan.media_type %></span>
+            <span class="rounded-full border border-white/[0.08] px-3 py-1.5"><%= plan.aspect_ratio %></span>
+            <span class="rounded-full border border-white/[0.08] px-3 py-1.5"><%= plan.duration %></span>
+          </div>
         </div>
 
-        <section class="media-frame relative aspect-[16/9] min-h-[360px] overflow-hidden rounded-[26px] border border-white/[0.08] sm:aspect-[21/9]" style="--image-position:<%= plan.image_position %>">
-          <div class="absolute inset-0 bg-gradient-to-r from-black/75 via-black/20 to-transparent"></div>
-          <div class="absolute inset-0 bg-gradient-to-t from-[#08090a]/90 via-transparent to-black/25"></div>
-          <div class="absolute inset-0 flex flex-col justify-between p-5 sm:p-7 lg:p-9">
-            <div class="flex items-start justify-between gap-4">
-              <span id="shotStatusPill" data-status="<%= plan.status %>" class="status-pill <%= statusStyles[plan.status] || statusStyles.Idea %> backdrop-blur-xl"><span class="h-1.5 w-1.5 rounded-full bg-current"></span><%= plan.status %></span>
-              <div class="rounded-full border border-white/15 bg-black/25 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/60 backdrop-blur"><%= plan.media_type %> · <%= plan.aspect_ratio %></div>
+        <section class="mt-6 overflow-hidden rounded-[28px] border <%= selectedGeneration ? 'border-acid/20 bg-acid/[0.025]' : 'border-white/[0.08] bg-[#101113]' %>">
+          <div class="grid lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)]">
+            <div class="relative aspect-video min-h-[300px] overflow-hidden bg-black/40 lg:min-h-[440px]">
+              <% if (selectedOutput && selectedOutput.kind === 'image' && !selectedOutput.mime_type.includes('svg')) { %>
+                <img src="<%= selectedOutput.content_url %>" alt="Selected generation <%= selectedGeneration.label %>" class="h-full w-full object-contain" />
+              <% } else if (selectedOutput && selectedOutput.kind === 'video') { %>
+                <video src="<%= selectedOutput.content_url %>" controls preload="metadata" class="h-full w-full object-contain"></video>
+              <% } else if (selectedOutput && selectedOutput.kind === 'audio') { %>
+                <div class="flex h-full flex-col items-center justify-center p-8"><span class="grid h-20 w-20 place-items-center rounded-3xl bg-acid/10 text-acid"><i data-lucide="audio-lines" class="h-9 w-9"></i></span><audio src="<%= selectedOutput.content_url %>" controls preload="metadata" class="mt-7 w-full max-w-lg"></audio></div>
+              <% } else { %>
+                <div class="media-frame absolute inset-0" style="--image-position:<%= plan.image_position %>"></div>
+                <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20"></div>
+                <% if (selectedGeneration) { %><div class="absolute inset-x-0 bottom-0 p-5 text-xs text-white/55 sm:p-7"><i data-lucide="circle-dashed" class="mr-2 inline h-4 w-4"></i>No output file is linked yet. Open the generation to attach one.</div><% } %>
+              <% } %>
+              <span class="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-acid/25 bg-black/65 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-acid backdrop-blur"><i data-lucide="<%= selectedGeneration ? 'badge-check' : 'circle-dashed' %>" class="h-3.5 w-3.5"></i><%= selectedGeneration ? 'Current final version' : 'Final preview' %></span>
             </div>
-            <div class="max-w-3xl">
-              <div class="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50"><%= plan.shot_code %> · <%= plan.scene_name %></div>
-              <h1 class="mt-2 text-4xl font-semibold tracking-[-0.045em] text-white sm:text-5xl lg:text-6xl"><%= plan.title %></h1>
-              <p class="mt-4 max-w-2xl text-sm leading-6 text-white/60 sm:text-base"><%= plan.description %></p>
+
+            <div class="flex min-h-[360px] flex-col p-6 sm:p-8">
+              <% if (selectedGeneration) { %>
+                <div class="flex items-start justify-between gap-4">
+                  <div><div class="text-[10px] font-semibold uppercase tracking-[0.15em] text-acid">Selected generation</div><h2 class="mt-2 text-3xl font-semibold tracking-[-0.04em]"><%= selectedGeneration.version_label %></h2><div class="mt-2 text-xs text-zinc-500"><%= selectedGeneration.model %></div></div>
+                  <div class="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 text-center"><div class="text-xs font-semibold"><%= selectedGeneration.platform_name || 'Unknown' %></div><div class="mt-1 text-[8px] uppercase tracking-wider text-zinc-700">Platform</div></div>
+                </div>
+                <p class="mt-6 line-clamp-5 text-sm leading-7 text-zinc-400"><%= selectedGeneration.prompt || 'No prompt recorded for this generation.' %></p>
+                <div class="mt-auto grid grid-cols-3 gap-2 pt-7">
+                  <div class="rounded-2xl border border-white/[0.06] bg-black/15 p-3"><div class="text-[8px] uppercase tracking-wider text-zinc-700">Cost</div><div class="mt-1.5 text-xs font-semibold"><%= formatCost(selectedGeneration.generation_cost) %></div></div>
+                  <div class="rounded-2xl border border-white/[0.06] bg-black/15 p-3"><div class="text-[8px] uppercase tracking-wider text-zinc-700">Tokens</div><div class="mt-1.5 text-xs font-semibold"><%= Number(selectedGeneration.total_tokens || 0).toLocaleString() %></div></div>
+                  <div class="rounded-2xl border border-white/[0.06] bg-black/15 p-3"><div class="text-[8px] uppercase tracking-wider text-zinc-700">Inputs</div><div class="mt-1.5 text-xs font-semibold"><%= selectedGeneration.resources.filter(resource => resource.role !== 'Output').length %></div></div>
+                </div>
+                <button type="button" class="generation-open-button primary-button mt-4 h-11 w-full" data-generation-id="<%= selectedGeneration.id %>"><i data-lucide="scan-search" class="h-4 w-4"></i>Review selected generation</button>
+              <% } else { %>
+                <div class="my-auto text-center"><span class="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-dashed border-white/15 text-zinc-700"><i data-lucide="image-plus" class="h-6 w-6"></i></span><h2 class="mt-5 text-xl font-semibold">No final version selected</h2><p class="mx-auto mt-2 max-w-xs text-xs leading-5 text-zinc-600">Choose the strongest generation below to make it the shot's current final version.</p><button type="button" data-open-tab="generations" class="ghost-button mt-5 h-10 px-4 text-xs">Browse generations</button></div>
+              <% } %>
             </div>
           </div>
         </section>
 
         <div class="sticky top-[68px] z-30 mt-5 flex items-center gap-1 overflow-x-auto rounded-2xl border border-white/[0.07] bg-[#0e0f11]/90 p-1.5 backdrop-blur-xl">
-          <button class="shot-tab active shrink-0 rounded-xl px-4 py-2 text-xs font-semibold" data-tab="overview"><i data-lucide="layout-dashboard" class="mr-2 inline h-3.5 w-3.5"></i>Overview</button>
-          <button class="shot-tab shrink-0 rounded-xl px-4 py-2 text-xs font-semibold text-zinc-600" data-tab="resources"><i data-lucide="folder-kanban" class="mr-2 inline h-3.5 w-3.5"></i>Resources <span id="resourceTabCount" class="ml-1 rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px]"><%= plan.resource_count %></span></button>
-          <button class="shot-tab shrink-0 rounded-xl px-4 py-2 text-xs font-semibold text-zinc-600" data-tab="generations"><i data-lucide="layers-3" class="mr-2 inline h-3.5 w-3.5"></i>Generations <span class="ml-1 rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px]"><%= plan.experiments_count %></span></button>
-          <button class="shot-tab shrink-0 rounded-xl px-4 py-2 text-xs font-semibold text-zinc-600" data-tab="prompt"><i data-lucide="braces" class="mr-2 inline h-3.5 w-3.5"></i>Prompt & settings</button>
+          <button class="shot-tab active shrink-0 rounded-xl px-4 py-2 text-xs font-semibold" data-tab="generations"><i data-lucide="layers-3" class="mr-2 inline h-3.5 w-3.5"></i>Generations <span class="ml-1 rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px]"><%= plan.generation_count %></span></button>
+          <button class="shot-tab shrink-0 rounded-xl px-4 py-2 text-xs font-semibold text-zinc-600" data-tab="resources"><i data-lucide="library" class="mr-2 inline h-3.5 w-3.5"></i>Shot library <span id="resourceTabCount" class="ml-1 rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px]"><%= plan.resource_count %></span></button>
+          <button class="shot-tab shrink-0 rounded-xl px-4 py-2 text-xs font-semibold text-zinc-600" data-tab="brief"><i data-lucide="braces" class="mr-2 inline h-3.5 w-3.5"></i>Brief & prompt</button>
           <button class="shot-tab shrink-0 rounded-xl px-4 py-2 text-xs font-semibold text-zinc-600" data-tab="notes"><i data-lucide="notebook-pen" class="mr-2 inline h-3.5 w-3.5"></i>Notes</button>
         </div>
 
-        <div class="mt-5 grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div class="mt-5 grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
           <div class="min-w-0">
-            <section class="shot-panel" data-panel="overview">
-              <div class="grid gap-5 lg:grid-cols-2">
-                <article class="rounded-3xl border border-white/[0.07] bg-[#101113] p-6">
-                  <div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600"><i data-lucide="target" class="h-4 w-4"></i>Creative intent</div>
-                  <p class="mt-5 text-[15px] leading-7 text-zinc-300"><%= plan.description || 'No creative brief has been added yet.' %></p>
-                  <div class="mt-6 flex flex-wrap gap-2"><% plan.tags.forEach(tag => { %><span class="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] font-medium text-zinc-500">#<%= tag %></span><% }) %></div>
-                </article>
-                <article class="rounded-3xl border border-white/[0.07] bg-[#101113] p-6">
-                  <div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600"><i data-lucide="list-checks" class="h-4 w-4"></i>Production focus</div>
-                  <div class="mt-5 space-y-4">
-                    <div class="flex gap-3"><span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-acid/10 text-acid"><i data-lucide="camera" class="h-3.5 w-3.5"></i></span><div><div class="text-xs font-semibold text-zinc-300">Cinematic continuity</div><div class="mt-1 text-[11px] leading-5 text-zinc-600">Match the visual language and subject identity established in <%= plan.scene_name %>.</div></div></div>
-                    <div class="flex gap-3"><span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-acid/10 text-acid"><i data-lucide="scan-eye" class="h-3.5 w-3.5"></i></span><div><div class="text-xs font-semibold text-zinc-300">Review priority</div><div class="mt-1 text-[11px] leading-5 text-zinc-600"><%= plan.issue || 'Evaluate prompt adherence, movement, and technical cleanliness.' %></div></div></div>
-                    <div class="flex gap-3"><span class="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-acid/10 text-acid"><i data-lucide="flag" class="h-3.5 w-3.5"></i></span><div><div class="text-xs font-semibold text-zinc-300">Next action</div><div class="mt-1 text-[11px] leading-5 text-zinc-600"><%= plan.next_action %></div></div></div>
-                  </div>
-                </article>
+            <section class="shot-panel" data-panel="generations">
+              <div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+                <div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Version history</div><h2 class="mt-2 text-2xl font-semibold tracking-tight">Generation timeline</h2><p class="mt-2 max-w-2xl text-sm text-zinc-500">Every result keeps its exact prompt, model, cost, output, and reusable input lineage.</p></div>
+                <% if (permissions.canEditPlans) { %><button id="addGenerationButton" class="primary-button h-11 px-5"><i data-lucide="plus" class="h-4 w-4"></i>Add generation</button><% } %>
               </div>
-              <article class="mt-5 overflow-hidden rounded-3xl border border-white/[0.07] bg-[#101113]">
-                <div class="flex items-center justify-between border-b border-white/[0.07] px-6 py-4"><div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Latest candidates</div><div class="mt-1 text-xs text-zinc-500">Most recent generations attached to this shot</div></div><button class="text-[10px] font-semibold text-zinc-500 hover:text-white" data-open-tab="generations">View all</button></div>
-                <div class="grid gap-3 p-4 sm:grid-cols-2"><% if (plan.generations.length) { plan.generations.slice(0,2).forEach((generation, index) => { %><div class="rounded-2xl border border-white/[0.07] bg-black/20 p-2.5"><div class="media-frame relative aspect-video rounded-xl" style="--image-position:<%= plan.image_position %>;filter:<%= index ? 'saturate(.78) brightness(.86)' : 'none' %>"><div class="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[9px] font-semibold backdrop-blur"><%= generation.prompt_version %></div></div><div class="flex items-center justify-between px-1 pb-1 pt-3"><div><div class="text-xs font-semibold"><%= generation.label %></div><div class="mt-1 text-[10px] text-zinc-600"><%= generation.model %></div></div><div class="rounded-full border border-white/[0.08] px-2 py-1 text-[10px] text-zinc-500"><%= generation.rating %>/5</div></div></div><% }) } else { %><div class="col-span-2 rounded-2xl border border-dashed border-white/10 py-12 text-center text-xs text-zinc-600">No generations logged yet.</div><% } %></div>
-              </article>
+
+              <div class="mt-5 grid gap-3 sm:grid-cols-3">
+                <div class="rounded-2xl border border-white/[0.07] bg-[#101113] p-4"><div class="text-[9px] uppercase tracking-[0.13em] text-zinc-700">Logged versions</div><div class="mt-2 text-2xl font-semibold"><%= plan.generation_count %></div></div>
+                <div class="rounded-2xl border border-white/[0.07] bg-[#101113] p-4"><div class="text-[9px] uppercase tracking-[0.13em] text-zinc-700">Tracked generation cost</div><div class="mt-2 text-2xl font-semibold"><%= formatCost(totalGenerationCost) %></div></div>
+                <div class="rounded-2xl border border-white/[0.07] bg-[#101113] p-4"><div class="text-[9px] uppercase tracking-[0.13em] text-zinc-700">Reusable files</div><div class="mt-2 text-2xl font-semibold"><%= plan.resource_count %></div></div>
+              </div>
+
+              <div class="mt-5 grid gap-4 md:grid-cols-2">
+                <% if (plan.generations.length) { plan.generations.forEach((generation, index) => { const output = generation.resources.find(resource => resource.role === 'Output'); const isSelected = generation.id === plan.selected_generation_id; %>
+                  <article class="generation-card group overflow-hidden rounded-3xl border <%= isSelected ? 'border-acid/25 bg-acid/[0.025]' : 'border-white/[0.07] bg-[#101113]' %>">
+                    <button type="button" class="generation-open-button block w-full text-left" data-generation-id="<%= generation.id %>">
+                      <div class="relative aspect-video overflow-hidden bg-black/35">
+                        <% if (output && output.kind === 'image' && !output.mime_type.includes('svg')) { %><img src="<%= output.content_url %>" alt="<%= generation.version_label %> output" loading="lazy" class="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]" />
+                        <% } else if (output && output.kind === 'video') { %><video src="<%= output.content_url %>" muted preload="metadata" class="h-full w-full object-cover"></video>
+                        <% } else { %><div class="media-frame absolute inset-0 transition duration-500 group-hover:scale-[1.02]" style="--image-position:<%= plan.image_position %>;filter:<%= index ? 'saturate(.82) brightness(.86)' : 'none' %>"></div><% } %>
+                        <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20"></div>
+                        <div class="absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
+                          <span class="rounded-full bg-black/65 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider backdrop-blur"><%= generation.version_label %></span>
+                          <% if (isSelected) { %><span class="inline-flex items-center gap-1 rounded-full border border-acid/25 bg-black/65 px-2.5 py-1 text-[9px] font-semibold text-acid backdrop-blur"><i data-lucide="badge-check" class="h-3 w-3"></i>Selected final</span><% } else { %><span class="rounded-full bg-black/65 px-2.5 py-1 text-[9px] font-semibold text-zinc-300 backdrop-blur"><%= generation.platform_name || 'Platform not recorded' %></span><% } %>
+                        </div>
+                        <div class="absolute bottom-3 left-3 flex flex-wrap gap-1.5"><% generation.resources.slice(0,3).forEach(resource => { %><span class="rounded-full border border-white/10 bg-black/60 px-2 py-1 text-[8px] text-white/60 backdrop-blur"><%= resource.role %></span><% }) %><% if (generation.resources.length > 3) { %><span class="rounded-full border border-white/10 bg-black/60 px-2 py-1 text-[8px] text-white/60 backdrop-blur">+<%= generation.resources.length - 3 %></span><% } %></div>
+                      </div>
+                      <div class="p-5">
+                        <div class="flex items-start justify-between gap-4"><div><h3 class="text-base font-semibold"><%= generation.version_label %></h3><div class="mt-1 text-[10px] text-zinc-600"><%= generation.model %> &middot; <%= generation.created_at.slice(0,10) %></div></div><div class="text-sm font-semibold text-acid"><%= formatCost(generation.generation_cost) %></div></div>
+                        <p class="mt-4 line-clamp-2 text-xs leading-5 text-zinc-500"><%= generation.notes || generation.prompt || 'No notes recorded.' %></p>
+                        <div class="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-3 text-[10px]"><span class="text-zinc-600"><%= Number(generation.total_tokens || 0).toLocaleString() %> tokens</span><span class="font-semibold text-zinc-300"><%= formatCost(generation.generation_cost) %></span></div>
+                      </div>
+                    </button>
+                    <% if (permissions.canEditPlans && !isSelected) { %><div class="border-t border-white/[0.06] p-3"><button type="button" class="select-generation-button ghost-button h-9 w-full text-xs" data-generation-id="<%= generation.id %>"><i data-lucide="badge-check" class="h-3.5 w-3.5"></i>Set as current final</button></div><% } %>
+                  </article>
+                <% }) } else { %>
+                  <div class="md:col-span-2 rounded-3xl border border-dashed border-white/10 py-20 text-center"><i data-lucide="image-plus" class="mx-auto h-8 w-8 text-zinc-700"></i><div class="mt-4 text-sm font-semibold">No generations yet</div><div class="mt-1 text-xs text-zinc-600">Log the first result with its prompt, output, cost, and input resources.</div><% if (permissions.canEditPlans) { %><button type="button" class="generation-empty-add ghost-button mt-5 h-10 px-4 text-xs">Add first generation</button><% } %></div>
+                <% } %>
+              </div>
             </section>
 
             <section class="shot-panel hidden" data-panel="resources">
               <div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-                <div>
-                  <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Shot resources</div>
-                  <h2 class="mt-2 text-2xl font-semibold tracking-tight">Media & production files</h2>
-                  <p class="mt-2 max-w-2xl text-sm text-zinc-500">Keep every reference, test, generation, sound file, document, and approved final attached to this shot.</p>
-                </div>
-                <div class="flex items-center gap-2">
-                  <div class="rounded-full border border-white/[0.08] px-3 py-1.5 text-[10px] text-zinc-500"><span id="resourceSummaryCount"><%= plan.resource_count %></span> files · <span id="resourceSummaryBytes"><%= formatBytes(plan.resource_bytes) %></span></div>
-                  <% if (plan.resources.length) { %><select id="resourceFilter" class="field h-9 w-auto min-w-32 py-0 text-xs"><option value="all">All types</option><% resourceCategories.forEach(category => { %><option value="<%= category %>"><%= category %></option><% }) %></select><% } %>
-                </div>
+                <div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Shared shot library</div><h2 class="mt-2 text-2xl font-semibold tracking-tight">Upload once, reuse everywhere</h2><p class="mt-2 max-w-2xl text-sm text-zinc-500">Files live at shot level and can be linked to multiple generations without duplication.</p></div>
+                <div class="flex items-center gap-2"><div class="rounded-full border border-white/[0.08] px-3 py-1.5 text-[10px] text-zinc-500"><%= plan.resource_count %> files &middot; <%= formatBytes(plan.resource_bytes) %></div><% if (plan.resources.length) { %><select id="resourceFilter" class="field h-9 w-auto min-w-32 py-0 text-xs"><option value="all">All types</option><% resourceCategories.forEach(category => { %><option value="<%= category %>"><%= category %></option><% }) %></select><% } %></div>
               </div>
 
               <% if (permissions.canEditPlans) { %>
@@ -111,16 +162,9 @@
                   <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
                     <div id="resourceDropZone" role="button" tabindex="0" class="group grid min-h-40 cursor-pointer place-items-center rounded-2xl border border-dashed border-white/15 bg-black/20 p-6 text-center outline-none transition hover:border-acid/40 hover:bg-acid/[0.025] focus:border-acid/50 focus:ring-2 focus:ring-acid/10">
                       <input id="resourceFileInput" name="file" type="file" multiple class="hidden" />
-                      <div>
-                        <span class="mx-auto grid h-11 w-11 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-zinc-500 transition group-hover:border-acid/20 group-hover:text-acid"><i data-lucide="upload-cloud" class="h-5 w-5"></i></span>
-                        <div class="mt-4 text-sm font-semibold text-zinc-300">Drop files here or choose from your computer</div>
-                        <div class="mt-1.5 text-[11px] text-zinc-600">Images, video, audio, documents, archives, and source files · up to <%= formatBytes(maxUploadBytes) %> each</div>
-                      </div>
+                      <div><span class="mx-auto grid h-11 w-11 place-items-center rounded-2xl border border-white/10 bg-white/[0.04] text-zinc-500 transition group-hover:border-acid/20 group-hover:text-acid"><i data-lucide="upload-cloud" class="h-5 w-5"></i></span><div class="mt-4 text-sm font-semibold text-zinc-300">Drop files here or choose from your computer</div><div class="mt-1.5 text-[11px] text-zinc-600">Images, video, audio, documents, archives, and source files &middot; up to <%= formatBytes(maxUploadBytes) %> each</div></div>
                     </div>
-                    <div class="flex flex-col gap-3">
-                      <label><span class="field-label">Resource category</span><select id="resourceCategory" class="field"><% resourceCategories.forEach(category => { %><option value="<%= category %>" <%= category === 'Generation' ? 'selected' : '' %>><%= category %></option><% }) %></select></label>
-                      <label class="flex-1"><span class="field-label">Upload note <span class="normal-case tracking-normal text-zinc-700">optional</span></span><textarea id="resourceNotes" class="field h-20 resize-none py-2.5 text-xs" maxlength="2000" placeholder="What is this file for?"></textarea></label>
-                    </div>
+                    <div class="flex flex-col gap-3"><label><span class="field-label">Library category</span><select id="resourceCategory" class="field"><% resourceCategories.forEach(category => { %><option value="<%= category %>" <%= category === 'Reference' ? 'selected' : '' %>><%= category %></option><% }) %></select></label><label class="flex-1"><span class="field-label">Upload note <span class="normal-case tracking-normal text-zinc-700">optional</span></span><textarea id="resourceNotes" class="field h-20 resize-none py-2.5 text-xs" maxlength="2000" placeholder="What is this file for?"></textarea></label></div>
                   </div>
                   <div id="resourceUploadQueue" class="mt-4 hidden space-y-2 border-t border-white/[0.07] pt-4"></div>
                 </form>
@@ -128,92 +172,79 @@
 
               <div id="resourceGrid" class="mt-6 grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
                 <% if (plan.resources.length) { plan.resources.forEach(resource => { %>
-                  <article class="resource-card group overflow-hidden rounded-3xl border <%= resource.category === 'Final' ? 'border-acid/20 bg-acid/[0.025]' : 'border-white/[0.07] bg-[#101113]' %>" data-resource-card="<%= resource.id %>" data-resource-category="<%= resource.category %>">
+                  <article class="resource-card group overflow-hidden rounded-3xl border border-white/[0.07] bg-[#101113]" data-resource-card="<%= resource.id %>" data-resource-category="<%= resource.category %>">
                     <div class="relative aspect-video overflow-hidden bg-black/30">
-                      <% if (resource.kind === 'image' && !resource.mime_type.includes('svg')) { %>
-                        <a href="/resources/<%= resource.id %>/content" target="_blank" rel="noopener"><img src="/resources/<%= resource.id %>/content" alt="<%= resource.original_name %>" loading="lazy" class="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]" /></a>
-                      <% } else if (resource.kind === 'video') { %>
-                        <video src="/resources/<%= resource.id %>/content" controls preload="metadata" class="h-full w-full bg-black object-contain"></video>
-                      <% } else if (resource.kind === 'audio') { %>
-                        <div class="flex h-full flex-col items-center justify-center p-5"><span class="grid h-14 w-14 place-items-center rounded-2xl bg-violet-400/10 text-violet-300"><i data-lucide="audio-lines" class="h-6 w-6"></i></span><audio src="/resources/<%= resource.id %>/content" controls preload="metadata" class="mt-5 h-9 w-full"></audio></div>
-                      <% } else { %>
-                        <a href="/resources/<%= resource.id %>/content?download=1" class="flex h-full flex-col items-center justify-center text-zinc-700 transition hover:text-zinc-400"><span class="grid h-16 w-16 place-items-center rounded-2xl border border-white/[0.07] bg-white/[0.025]"><i data-lucide="<%= resourceIcons[resource.kind] || resourceIcons.other %>" class="h-7 w-7"></i></span><span class="mt-3 text-[9px] font-semibold uppercase tracking-[0.14em]"><%= resource.kind %></span></a>
-                      <% } %>
-                      <span class="absolute left-3 top-3 rounded-full border border-white/10 bg-black/65 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] <%= resource.category === 'Final' ? 'text-acid' : 'text-zinc-300' %> backdrop-blur"><%= resource.category %></span>
+                      <% if (resource.kind === 'image' && !resource.mime_type.includes('svg')) { %><a href="<%= resource.content_url %>" target="_blank" rel="noopener"><img src="<%= resource.content_url %>" alt="<%= resource.original_name %>" loading="lazy" class="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]" /></a>
+                      <% } else if (resource.kind === 'video') { %><video src="<%= resource.content_url %>" controls preload="metadata" class="h-full w-full bg-black object-contain"></video>
+                      <% } else if (resource.kind === 'audio') { %><div class="flex h-full flex-col items-center justify-center p-5"><span class="grid h-14 w-14 place-items-center rounded-2xl bg-violet-400/10 text-violet-300"><i data-lucide="audio-lines" class="h-6 w-6"></i></span><audio src="<%= resource.content_url %>" controls preload="metadata" class="mt-5 h-9 w-full"></audio></div>
+                      <% } else { %><a href="<%= resource.download_url %>" class="flex h-full flex-col items-center justify-center text-zinc-700 transition hover:text-zinc-400"><span class="grid h-16 w-16 place-items-center rounded-2xl border border-white/[0.07] bg-white/[0.025]"><i data-lucide="<%= resourceIcons[resource.kind] || resourceIcons.other %>" class="h-7 w-7"></i></span><span class="mt-3 text-[9px] font-semibold uppercase tracking-[0.14em]"><%= resource.kind %></span></a><% } %>
+                      <span class="absolute left-3 top-3 rounded-full border border-white/10 bg-black/65 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.1em] text-zinc-300 backdrop-blur"><%= resource.category %></span>
+                      <% if (resource.generation_usage_count) { %><span class="absolute right-3 top-3 rounded-full border border-acid/15 bg-black/65 px-2.5 py-1 text-[9px] text-acid backdrop-blur">Used in <%= resource.generation_usage_count %> version<%= resource.generation_usage_count === 1 ? '' : 's' %></span><% } %>
                     </div>
-                    <div class="p-4">
-                      <div class="truncate text-sm font-semibold text-zinc-200" title="<%= resource.original_name %>"><%= resource.original_name %></div>
-                      <div class="mt-1.5 flex items-center gap-2 text-[10px] text-zinc-600"><span><%= formatBytes(resource.size_bytes) %></span><span>·</span><span><%= resource.created_at.slice(0,10) %></span><% if (resource.uploaded_by_name) { %><span>·</span><span class="truncate"><%= resource.uploaded_by_name %></span><% } %></div>
-                      <% if (resource.notes) { %><p class="mt-3 line-clamp-2 text-[11px] leading-5 text-zinc-500"><%= resource.notes %></p><% } %>
-                      <div class="mt-4 flex items-center gap-2 border-t border-white/[0.06] pt-3">
-                        <a href="/resources/<%= resource.id %>/content" target="_blank" rel="noopener" class="ghost-button h-8 px-3 text-[10px]"><i data-lucide="expand" class="h-3.5 w-3.5"></i>Open</a>
-                        <a href="/resources/<%= resource.id %>/content?download=1" class="icon-button h-8 w-8" title="Download <%= resource.original_name %>" aria-label="Download <%= resource.original_name %>"><i data-lucide="download" class="h-3.5 w-3.5"></i></a>
-                        <% if (permissions.canEditPlans) { %><button type="button" class="resource-delete-button icon-button ml-auto h-8 w-8 text-zinc-600 hover:border-red-300/20 hover:text-red-300" data-resource-id="<%= resource.id %>" data-resource-name="<%= resource.original_name %>" aria-label="Remove <%= resource.original_name %>"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button><% } %>
-                      </div>
-                    </div>
+                    <div class="p-4"><div class="truncate text-sm font-semibold text-zinc-200" title="<%= resource.original_name %>"><%= resource.original_name %></div><div class="mt-1.5 text-[10px] text-zinc-600"><%= formatBytes(resource.size_bytes) %> &middot; <%= resource.created_at.slice(0,10) %></div><% if (resource.notes) { %><p class="mt-3 line-clamp-2 text-[11px] leading-5 text-zinc-500"><%= resource.notes %></p><% } %><div class="mt-4 flex items-center gap-2 border-t border-white/[0.06] pt-3"><a href="<%= resource.content_url %>" target="_blank" rel="noopener" class="ghost-button h-8 px-3 text-[10px]"><i data-lucide="expand" class="h-3.5 w-3.5"></i>Open</a><a href="<%= resource.download_url %>" class="icon-button h-8 w-8" aria-label="Download <%= resource.original_name %>"><i data-lucide="download" class="h-3.5 w-3.5"></i></a><% if (permissions.canEditPlans) { %><button type="button" class="resource-delete-button icon-button ml-auto h-8 w-8 text-zinc-600 hover:border-red-300/20 hover:text-red-300" data-resource-id="<%= resource.id %>" data-resource-name="<%= resource.original_name %>" aria-label="Remove <%= resource.original_name %>"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button><% } %></div></div>
                   </article>
-                <% }) } else { %>
-                  <div id="emptyResources" class="sm:col-span-2 2xl:col-span-3 rounded-3xl border border-dashed border-white/10 py-20 text-center"><i data-lucide="folder-open" class="mx-auto h-8 w-8 text-zinc-700"></i><div class="mt-4 text-sm font-semibold">No resources attached</div><div class="mt-1 text-xs text-zinc-600"><%= permissions.canEditPlans ? 'Upload the first reference, generation, or final for this shot.' : 'This shot does not have any production files yet.' %></div></div>
-                <% } %>
+                <% }) } else { %><div class="sm:col-span-2 2xl:col-span-3 rounded-3xl border border-dashed border-white/10 py-20 text-center"><i data-lucide="folder-open" class="mx-auto h-8 w-8 text-zinc-700"></i><div class="mt-4 text-sm font-semibold">The shot library is empty</div><div class="mt-1 text-xs text-zinc-600">Upload a first frame, reference, output, depth map, or any production file.</div></div><% } %>
               </div>
             </section>
 
-            <section class="shot-panel hidden" data-panel="generations">
-              <div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Generation history</div><h2 class="mt-2 text-2xl font-semibold tracking-tight">Tests & candidates</h2><p class="mt-2 text-sm text-zinc-500">Every attempt stays connected to the prompt version that created it.</p></div><div class="rounded-full border border-white/[0.08] px-3 py-1.5 text-[10px] text-zinc-500"><%= plan.experiments_count %> total experiments</div></div>
-              <div class="mt-6 grid gap-4 md:grid-cols-2"><% if (plan.generations.length) { plan.generations.forEach((generation, index) => { %><article class="overflow-hidden rounded-3xl border border-white/[0.07] bg-[#101113] p-3"><div class="media-frame relative aspect-video rounded-2xl" style="--image-position:<%= plan.image_position %>;filter:<%= index ? 'saturate(.8) brightness(.85)' : 'none' %>"><div class="absolute inset-x-0 top-0 flex items-start justify-between p-3"><span class="rounded-full bg-black/55 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider backdrop-blur"><%= generation.prompt_version %></span><span class="rounded-full bg-black/55 px-2.5 py-1 text-[9px] font-semibold text-acid backdrop-blur"><%= generation.verdict %></span></div></div><div class="p-2 pt-4"><div class="flex items-center justify-between"><div><h3 class="text-sm font-semibold"><%= generation.label %></h3><div class="mt-1 text-[10px] text-zinc-600"><%= generation.model %></div></div><div class="text-xl font-semibold"><%= generation.rating %><span class="text-[10px] text-zinc-600">/5</span></div></div><p class="mt-3 border-t border-white/[0.06] pt-3 text-xs leading-5 text-zinc-500"><%= generation.notes %></p></div></article><% }) } else { %><div class="md:col-span-2 rounded-3xl border border-dashed border-white/10 py-20 text-center"><i data-lucide="image-off" class="mx-auto h-8 w-8 text-zinc-700"></i><div class="mt-4 text-sm font-semibold">No generations yet</div><div class="mt-1 text-xs text-zinc-600">This shot is still waiting for its first experiment.</div></div><% } %></div>
-            </section>
-
-            <section class="shot-panel hidden" data-panel="prompt">
-              <div class="rounded-3xl border border-white/[0.07] bg-[#101113] p-6">
-                <div class="flex items-center justify-between"><div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Current prompt</div><div class="mt-1 text-xs text-zinc-500">Latest production version</div></div><button id="copyPromptButton" class="ghost-button h-9 px-3 text-xs"><i data-lucide="copy" class="h-3.5 w-3.5"></i>Copy prompt</button></div>
-                <div class="mt-5 rounded-2xl border border-white/[0.07] bg-black/30 p-5 text-[14px] leading-7 text-zinc-300"><%= plan.prompt || 'No prompt has been added yet.' %></div>
-                <div class="mt-6 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Negative prompt</div>
-                <div class="mt-3 rounded-2xl border border-white/[0.07] bg-black/20 p-4 text-xs leading-6 text-zinc-500"><%= plan.negative_prompt || 'No negative prompt.' %></div>
+            <section class="shot-panel hidden" data-panel="brief">
+              <div class="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(300px,.8fr)]">
+                <article class="rounded-3xl border border-white/[0.07] bg-[#101113] p-6"><div class="flex items-center justify-between"><div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Master shot prompt</div><div class="mt-1 text-xs text-zinc-500">Starting point for new versions</div></div><button id="copyPromptButton" class="ghost-button h-9 px-3 text-xs"><i data-lucide="copy" class="h-3.5 w-3.5"></i>Copy</button></div><div class="mt-5 rounded-2xl border border-white/[0.07] bg-black/30 p-5 text-[14px] leading-7 text-zinc-300"><%= plan.prompt || 'No prompt has been added yet.' %></div><div class="mt-6 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Negative prompt</div><div class="mt-3 rounded-2xl border border-white/[0.07] bg-black/20 p-4 text-xs leading-6 text-zinc-500"><%= plan.negative_prompt || 'No negative prompt.' %></div></article>
+                <article class="rounded-3xl border border-white/[0.07] bg-[#101113] p-6"><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Creative intent</div><p class="mt-5 text-[15px] leading-7 text-zinc-300"><%= plan.description || 'No creative brief has been added yet.' %></p><div class="mt-6 flex flex-wrap gap-2"><% plan.tags.forEach(tag => { %><span class="rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[10px] font-medium text-zinc-500">#<%= tag %></span><% }) %></div></article>
               </div>
-              <div class="mt-5 grid gap-px overflow-hidden rounded-3xl border border-white/[0.07] bg-white/[0.07] sm:grid-cols-2 lg:grid-cols-4"><% [['AI model',plan.model,'cpu'],['Aspect ratio',plan.aspect_ratio,'ratio'],['Duration',plan.duration,'timer'],['Media type',plan.media_type,'film']].forEach(([label,value,icon]) => { %><div class="bg-[#101113] p-5"><i data-lucide="<%= icon %>" class="h-4 w-4 text-zinc-600"></i><div class="mt-4 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-700"><%= label %></div><div class="mt-1.5 text-sm font-semibold text-zinc-300"><%= value %></div></div><% }) %></div>
+              <div class="mt-5 grid gap-px overflow-hidden rounded-3xl border border-white/[0.07] bg-white/[0.07] sm:grid-cols-2 lg:grid-cols-4"><% [['Default model',plan.model,'cpu'],['Aspect ratio',plan.aspect_ratio,'ratio'],['Duration',plan.duration,'timer'],['Media type',plan.media_type,'film']].forEach(([label,value,icon]) => { %><div class="bg-[#101113] p-5"><i data-lucide="<%= icon %>" class="h-4 w-4 text-zinc-600"></i><div class="mt-4 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-700"><%= label %></div><div class="mt-1.5 text-sm font-semibold text-zinc-300"><%= value %></div></div><% }) %></div>
             </section>
 
             <section class="shot-panel hidden" data-panel="notes">
-              <div class="grid gap-5 lg:grid-cols-2">
-                <article class="rounded-3xl border <%= plan.issue ? 'border-orange-300/10 bg-orange-300/[0.035]' : 'border-white/[0.07] bg-[#101113]' %> p-6"><div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] <%= plan.issue ? 'text-orange-300/60' : 'text-zinc-600' %>"><i data-lucide="triangle-alert" class="h-4 w-4"></i>Current issue</div><p class="mt-4 text-sm leading-6 <%= plan.issue ? 'text-orange-100/75' : 'text-zinc-500' %>"><%= plan.issue || 'No blocking issue has been recorded for this shot.' %></p></article>
-                <article class="rounded-3xl border border-white/[0.07] bg-[#101113] p-6"><div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600"><i data-lucide="arrow-up-right" class="h-4 w-4"></i>Next action</div><p class="mt-4 text-sm leading-6 text-zinc-300"><%= plan.next_action %></p></article>
-              </div>
-              <article class="mt-5 rounded-3xl border border-white/[0.07] bg-[#101113] p-6"><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Production tips</div><div class="mt-5 space-y-3"><div class="flex gap-3 rounded-2xl border border-white/[0.06] bg-black/15 p-4"><i data-lucide="lightbulb" class="mt-0.5 h-4 w-4 shrink-0 text-acid"></i><p class="text-xs leading-5 text-zinc-500">Keep successful camera and lighting phrases stable between prompt versions; change one variable at a time.</p></div><div class="flex gap-3 rounded-2xl border border-white/[0.06] bg-black/15 p-4"><i data-lucide="history" class="mt-0.5 h-4 w-4 shrink-0 text-acid"></i><p class="text-xs leading-5 text-zinc-500">Record why a generation failed so the team does not repeat the same experiment later.</p></div></div></article>
+              <div class="grid gap-5 lg:grid-cols-2"><article class="rounded-3xl border <%= plan.issue ? 'border-orange-300/10 bg-orange-300/[0.035]' : 'border-white/[0.07] bg-[#101113]' %> p-6"><div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] <%= plan.issue ? 'text-orange-300/60' : 'text-zinc-600' %>"><i data-lucide="triangle-alert" class="h-4 w-4"></i>Current issue</div><p class="mt-4 text-sm leading-6 <%= plan.issue ? 'text-orange-100/75' : 'text-zinc-500' %>"><%= plan.issue || 'No blocking issue has been recorded for this shot.' %></p></article><article class="rounded-3xl border border-white/[0.07] bg-[#101113] p-6"><div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600"><i data-lucide="arrow-up-right" class="h-4 w-4"></i>Next action</div><p class="mt-4 text-sm leading-6 text-zinc-300"><%= plan.next_action %></p></article></div>
+              <article class="mt-5 rounded-3xl border border-white/[0.07] bg-[#101113] p-6"><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Generation discipline</div><div class="mt-5 grid gap-3 md:grid-cols-3"><div class="rounded-2xl border border-white/[0.06] bg-black/15 p-4"><i data-lucide="git-compare-arrows" class="h-4 w-4 text-acid"></i><p class="mt-3 text-xs leading-5 text-zinc-500">Change one meaningful variable per version so improvements remain explainable.</p></div><div class="rounded-2xl border border-white/[0.06] bg-black/15 p-4"><i data-lucide="history" class="h-4 w-4 text-acid"></i><p class="mt-3 text-xs leading-5 text-zinc-500">Reuse proven inputs from the shot library instead of uploading duplicates.</p></div><div class="rounded-2xl border border-white/[0.06] bg-black/15 p-4"><i data-lucide="receipt-text" class="h-4 w-4 text-acid"></i><p class="mt-3 text-xs leading-5 text-zinc-500">Record token rates at generation time so historical costs remain auditable.</p></div></div></article>
             </section>
           </div>
 
           <aside class="space-y-5 xl:sticky xl:top-[142px]">
-            <section class="rounded-3xl border border-white/[0.08] bg-[#101113] p-5">
-              <div class="flex items-center justify-between"><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Workflow</div><i data-lucide="git-branch" class="h-4 w-4 text-zinc-700"></i></div>
-              <% if (allowedStatuses.length) { %><label class="mt-4 block"><span class="field-label">Status</span><select id="shotStatusSelect" class="field h-11"><% allowedStatuses.forEach(status => { %><option <%= status === plan.status ? 'selected' : '' %>><%= status %></option><% }) %></select></label><% } else { %><div class="mt-4"><span class="field-label">Status</span><span class="status-pill <%= statusStyles[plan.status] || statusStyles.Idea %>"><%= plan.status %></span></div><% } %>
-              <div class="mt-5 flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-black/20 p-3"><div class="grid h-9 w-9 place-items-center rounded-full bg-white/[0.08] text-[10px] font-bold"><%= ownerInitials %></div><div><div class="text-xs font-semibold"><%= plan.owner %></div><div class="mt-1 text-[10px] text-zinc-600">Plan owner</div></div></div>
-              <% if (permissions.canApprovePlans && plan.status !== 'Approved' && plan.status !== 'Delivered') { %><button id="approveShotButton" class="primary-button mt-4 h-11 w-full"><i data-lucide="circle-check" class="h-4 w-4"></i>Approve final</button><% } %>
-            </section>
-
-            <section class="rounded-3xl border border-white/[0.08] bg-[#101113] p-5">
-              <div class="flex items-center justify-between"><div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Quality</div><div class="mt-1 text-xs text-zinc-500">Overall review score</div></div><div class="quality-ring grid h-16 w-16 place-items-center rounded-full" style="--score:<%= Math.round(Number(plan.quality || 0) * 20) %>"><div class="grid h-[54px] w-[54px] place-items-center rounded-full bg-[#101113] text-sm font-bold"><%= plan.quality ? plan.quality.toFixed(1) : '—' %></div></div></div>
-              <div class="mt-5 grid grid-cols-2 gap-3"><div class="rounded-xl bg-white/[0.025] p-3"><div class="text-[9px] uppercase tracking-wider text-zinc-700">Experiments</div><div class="mt-1 text-lg font-semibold"><%= plan.experiments_count %></div></div><div class="rounded-xl bg-white/[0.025] p-3"><div class="text-[9px] uppercase tracking-wider text-zinc-700">Priority</div><div class="mt-1 text-sm font-semibold <%= plan.priority === 'Critical' ? 'text-red-300' : plan.priority === 'High' ? 'text-amber-300' : 'text-zinc-300' %>"><%= plan.priority %></div></div></div>
-            </section>
-
-            <section class="rounded-3xl border border-white/[0.08] bg-[#101113] p-5">
-              <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Shot metadata</div>
-              <dl class="mt-4 space-y-3 text-xs"><% [['Scene',plan.scene_name],['Sequence',plan.sequence_name],['Due',plan.due_date || 'Not scheduled'],['Created',plan.created_at.slice(0,10)]].forEach(([label,value]) => { %><div class="flex items-center justify-between gap-4"><dt class="text-zinc-600"><%= label %></dt><dd class="truncate font-medium text-zinc-300"><%= value %></dd></div><% }) %></dl>
-            </section>
+            <section class="rounded-3xl border border-white/[0.08] bg-[#101113] p-5"><div class="flex items-center justify-between"><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Workflow</div><i data-lucide="git-branch" class="h-4 w-4 text-zinc-700"></i></div><% if (allowedStatuses.length) { %><label class="mt-4 block"><span class="field-label">Status</span><select id="shotStatusSelect" class="field h-11"><% allowedStatuses.forEach(status => { %><option <%= status === plan.status ? 'selected' : '' %>><%= status %></option><% }) %></select></label><% } else { %><div class="mt-4"><span class="field-label">Status</span><span class="status-pill <%= statusStyles[plan.status] || statusStyles.Idea %>"><%= plan.status %></span></div><% } %><div class="mt-5 flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-black/20 p-3"><div class="grid h-9 w-9 place-items-center rounded-full bg-white/[0.08] text-[10px] font-bold"><%= ownerInitials %></div><div><div class="text-xs font-semibold"><%= plan.owner %></div><div class="mt-1 text-[10px] text-zinc-600">Shot owner</div></div></div><% if (permissions.canApprovePlans && plan.status !== 'Approved' && plan.status !== 'Delivered') { %><button id="approveShotButton" class="primary-button mt-4 h-11 w-full"><i data-lucide="circle-check" class="h-4 w-4"></i>Approve selected final</button><% } %></section>
+            <section class="rounded-3xl border border-white/[0.08] bg-[#101113] p-5"><div class="flex items-center justify-between"><div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Version health</div><div class="mt-1 text-xs text-zinc-500">Generation coverage</div></div><div class="quality-ring grid h-16 w-16 place-items-center rounded-full" style="--score:<%= Math.round(Number(plan.quality || 0) * 20) %>"><div class="grid h-[54px] w-[54px] place-items-center rounded-full bg-[#101113] text-sm font-bold"><%= plan.quality ? plan.quality.toFixed(1) : '—' %></div></div></div><div class="mt-5 grid grid-cols-2 gap-3"><div class="rounded-xl bg-white/[0.025] p-3"><div class="text-[9px] uppercase tracking-wider text-zinc-700">Versions</div><div class="mt-1 text-lg font-semibold"><%= plan.generation_count %></div></div><div class="rounded-xl bg-white/[0.025] p-3"><div class="text-[9px] uppercase tracking-wider text-zinc-700">Files linked</div><div class="mt-1 text-lg font-semibold"><%= plan.generations.reduce((total, generation) => total + generation.resources.length, 0) %></div></div></div></section>
+            <section class="rounded-3xl border border-white/[0.08] bg-[#101113] p-5"><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Shot metadata</div><dl class="mt-4 space-y-3 text-xs"><% [['Scene',plan.scene_name],['Sequence',plan.sequence_name],['Due',plan.due_date || 'Not scheduled'],['Priority',plan.priority],['Created',plan.created_at.slice(0,10)]].forEach(([label,value]) => { %><div class="flex items-center justify-between gap-4"><dt class="text-zinc-600"><%= label %></dt><dd class="truncate font-medium text-zinc-300"><%= value %></dd></div><% }) %></dl></section>
           </aside>
-        </div>
-
-        <div class="mt-8 flex items-center justify-between border-t border-white/[0.07] pt-6">
-          <% if (previousPlan) { %><a href="/plans/<%= previousPlan.id %>" class="group flex items-center gap-3"><span class="icon-button"><i data-lucide="arrow-left" class="h-4 w-4"></i></span><span><span class="block text-[9px] uppercase tracking-wider text-zinc-700">Previous shot</span><span class="mt-1 block text-xs font-semibold text-zinc-400 group-hover:text-white"><%= previousPlan.shot_code %> · <%= previousPlan.title %></span></span></a><% } else { %><span></span><% } %>
-          <% if (nextPlan) { %><a href="/plans/<%= nextPlan.id %>" class="group flex items-center gap-3 text-right"><span><span class="block text-[9px] uppercase tracking-wider text-zinc-700">Next shot</span><span class="mt-1 block text-xs font-semibold text-zinc-400 group-hover:text-white"><%= nextPlan.shot_code %> · <%= nextPlan.title %></span></span><span class="icon-button"><i data-lucide="arrow-right" class="h-4 w-4"></i></span></a><% } %>
         </div>
       </main>
     </div>
 
-    <div id="shotToast" class="pointer-events-none fixed bottom-5 left-1/2 z-[70] flex -translate-x-1/2 translate-y-4 items-center gap-2 rounded-full border border-white/10 bg-zinc-100 px-4 py-2.5 text-xs font-semibold text-black opacity-0 shadow-float transition-all"><i data-lucide="check" class="h-4 w-4"></i><span></span></div>
+    <div id="generationModal" class="modal-backdrop fixed inset-0 z-[60] hidden items-center justify-center bg-black/75 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="generationModalTitle">
+      <div class="modal-card flex max-h-[94vh] w-full max-w-6xl flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#111214] shadow-float">
+        <header class="flex shrink-0 items-center justify-between border-b border-white/[0.07] px-5 py-4 sm:px-6"><div><div class="text-[9px] font-semibold uppercase tracking-[0.15em] text-acid">Generation detail</div><h2 id="generationModalTitle" class="mt-1 text-lg font-semibold">Generation</h2></div><button type="button" class="generation-modal-close icon-button" aria-label="Close generation detail"><i data-lucide="x" class="h-4 w-4"></i></button></header>
+        <div id="generationDetailBody" class="min-h-0 flex-1 overflow-y-auto"></div>
+        <footer class="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-white/[0.07] px-5 py-4 sm:px-6"><button id="editGenerationButton" type="button" class="ghost-button h-10 px-4 text-xs"><i data-lucide="pencil" class="h-3.5 w-3.5"></i>Edit details & resources</button><button id="selectGenerationButton" type="button" class="primary-button h-10 px-4 text-xs"><i data-lucide="badge-check" class="h-3.5 w-3.5"></i>Set as current final</button></footer>
+      </div>
+    </div>
+
+    <div id="generationEditorModal" class="modal-backdrop fixed inset-0 z-[65] hidden items-center justify-center bg-black/80 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="generationEditorTitle">
+      <form id="generationEditorForm" class="modal-card flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#111214] shadow-float">
+        <header class="flex shrink-0 items-center justify-between border-b border-white/[0.07] px-5 py-4 sm:px-6"><div><div class="text-[9px] font-semibold uppercase tracking-[0.15em] text-acid">Version record</div><h2 id="generationEditorTitle" class="mt-1 text-lg font-semibold">Add generation</h2></div><button type="button" class="generation-editor-close icon-button" aria-label="Close generation editor"><i data-lucide="x" class="h-4 w-4"></i></button></header>
+        <div class="min-h-0 flex-1 overflow-y-auto p-5 sm:p-6">
+          <input id="generationIdInput" type="hidden" />
+          <div class="grid gap-4 sm:grid-cols-[180px_minmax(0,1fr)_240px]"><label><span class="field-label">Generation version</span><div class="relative"><span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold text-zinc-500">v</span><input id="generationVersionNumberInput" type="number" min="1" max="1000000" step="1" class="field pl-8" required /></div></label><label><span class="field-label">AI model</span><select id="generationModelInput" class="field" required><% generationCatalogs.models.forEach(model => { %><option><%= model.name %></option><% }) %></select></label><label><span class="field-label">Seed <span class="normal-case tracking-normal text-zinc-700">optional</span></span><input id="generationSeedInput" class="field" maxlength="240" /></label></div>
+          <div class="mt-4 grid gap-4 lg:grid-cols-2"><label><span class="field-label">Prompt</span><textarea id="generationPromptInput" class="field h-40 resize-y text-xs leading-6" maxlength="20000" placeholder="The exact prompt sent to the model"></textarea></label><div class="space-y-4"><label><span class="field-label">Negative prompt <span class="normal-case tracking-normal text-zinc-700">optional</span></span><textarea id="generationNegativePromptInput" class="field h-[74px] resize-y text-xs" maxlength="10000"></textarea></label><label><span class="field-label">Generation notes <span class="normal-case tracking-normal text-zinc-700">optional</span></span><textarea id="generationNotesInput" class="field h-[74px] resize-y text-xs" maxlength="5000" placeholder="What changed, what worked, what failed"></textarea></label></div></div>
+
+          <section class="mt-6 rounded-3xl border border-white/[0.07] bg-black/20 p-4 sm:p-5"><div class="flex flex-col justify-between gap-2 sm:flex-row sm:items-center"><div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Generation cost estimate</div><p class="mt-1 text-[11px] text-zinc-700">Token price is copied from the platform when this generation is saved and will never change retroactively.</p></div><div id="generationCostPreview" class="text-lg font-semibold text-acid">$0.0000</div></div><div class="mt-4 grid gap-3 sm:grid-cols-3"><label><span class="field-label">Generation platform</span><select id="generationPlatformInput" class="field" required><% generationCatalogs.platforms.forEach(platform => { %><option value="<%= platform.id %>"><%= platform.name %></option><% }) %></select></label><label><span class="field-label">Tokens / credits used</span><input id="generationTokenCountInput" type="number" min="0" step="1" class="field" value="0" /></label><div class="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3"><div class="text-[9px] uppercase tracking-wider text-zinc-700">Price snapshot</div><div id="generationTokenPricePreview" class="mt-2 text-sm font-semibold text-zinc-300">$0.000000 / token</div><div id="generationPriceNote" class="mt-1 text-[9px] leading-4 text-zinc-700">Current Admin price</div></div></div></section>
+
+          <section class="mt-6 rounded-3xl border border-white/[0.07] bg-black/20 p-4 sm:p-5"><div class="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"><div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Generation files & lineage</div><p class="mt-1 max-w-2xl text-[11px] leading-5 text-zinc-700">Select existing files from this shot and assign their role. A file can be reused in as many versions as needed.</p></div><input id="generationResourceSearch" class="field h-9 w-full py-0 text-xs sm:w-52" placeholder="Search shot library" /></div>
+            <div class="mt-4 flex flex-col gap-3 rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-3 sm:flex-row sm:items-center"><input id="generationUploadInput" type="file" multiple class="hidden" /><button id="generationUploadButton" type="button" class="ghost-button h-9 shrink-0 px-3 text-xs"><i data-lucide="upload-cloud" class="h-3.5 w-3.5"></i>Upload new files</button><select id="generationUploadRole" class="field h-9 py-0 text-xs"><% generationResourceRoles.forEach(role => { %><option><%= role %></option><% }) %></select><span id="generationUploadStatus" class="text-[10px] text-zinc-700">New uploads are added to the shot library and linked here.</span></div>
+            <div id="generationResourcePicker" class="mt-4 grid gap-2 sm:grid-cols-2"></div>
+          </section>
+        </div>
+        <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-white/[0.07] px-5 py-4 sm:px-6"><button type="button" class="generation-editor-close ghost-button h-10 px-4 text-xs">Cancel</button><button id="saveGenerationButton" type="submit" class="primary-button h-10 px-5 text-xs"><i data-lucide="save" class="h-3.5 w-3.5"></i>Save generation</button></footer>
+      </form>
+    </div>
+
+    <div id="shotToast" class="pointer-events-none fixed bottom-5 left-1/2 z-[80] flex -translate-x-1/2 translate-y-4 items-center gap-2 rounded-full border border-white/10 bg-zinc-100 px-4 py-2.5 text-xs font-semibold text-black opacity-0 shadow-float transition-all"><i data-lucide="check" class="h-4 w-4"></i><span></span></div>
     <script>
       window.__AI_HUB_PLAN__ = <%- serializedPlan %>;
       window.__AI_HUB_CURRENT_USER__ = <%- serializedUser %>;
       window.__AI_HUB_PERMISSIONS__ = <%- serializedPermissions %>;
+      window.__AI_HUB_MAX_UPLOAD_BYTES__ = <%= maxUploadBytes %>;
+      window.__AI_HUB_RESOURCE_ROLES__ = <%- JSON.stringify(generationResourceRoles).replaceAll('<', '\\u003c') %>;
+      window.__AI_HUB_GENERATION_CATALOGS__ = <%- JSON.stringify(generationCatalogs).replaceAll('<', '\\u003c') %>;
     </script>
     <script src="/vendor/lucide/lucide.js"></script>
     <script src="/js/plan-detail.js" defer></script>

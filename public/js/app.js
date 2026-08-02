@@ -12,6 +12,7 @@ const state = {
   currentUser: window.__AI_HUB_CURRENT_USER__ || null,
   permissions: window.__AI_HUB_PERMISSIONS__ || {},
   roleDefinitions: window.__AI_HUB_ROLES__ || {},
+  generationCatalogs: window.__AI_HUB_GENERATION_CATALOGS__ || { models: [], platforms: [], resource_roles: [] },
   query: "",
   status: "all",
   view: "board",
@@ -479,9 +480,117 @@ document.querySelector("#newUserForm")?.addEventListener("submit", async (event)
   await loadUsers();
 });
 
+const catalogsModal = document.querySelector("#catalogsModal");
+const catalogsModalCard = document.querySelector("#catalogsModalCard");
+let activeCatalogType = "models";
+
+const catalogCopy = {
+  models: { singular: "AI model", eyebrow: "Available models", title: "AI model catalog" },
+  platforms: { singular: "generation platform", eyebrow: "Platforms & frozen pricing", title: "Generation platform catalog" },
+  resource_roles: { singular: "resource type", eyebrow: "Generation resource types", title: "Resource type catalog" }
+};
+
+async function loadCatalogs() {
+  const response = await fetch("/api/admin/catalogs");
+  const payload = await response.json();
+  if (!response.ok) return showToast(payload.error || "Could not load generation settings");
+  state.generationCatalogs = payload;
+  renderCatalogs();
+}
+
+function renderCatalogs() {
+  if (!catalogsModal) return;
+  const copy = catalogCopy[activeCatalogType];
+  const items = state.generationCatalogs[activeCatalogType] || [];
+  document.querySelector("#catalogFormEyebrow").textContent = `Add ${copy.singular}`;
+  document.querySelector("#catalogListEyebrow").textContent = copy.eyebrow;
+  document.querySelector("#catalogListTitle").textContent = copy.title;
+  document.querySelector("#catalogItemCount").textContent = `${items.filter((item) => item.active).length} active`;
+  document.querySelector("#catalogPriceField").classList.toggle("hidden", activeCatalogType !== "platforms");
+  document.querySelectorAll(".catalog-tab").forEach((button) => {
+    const active = button.dataset.catalog === activeCatalogType;
+    button.classList.toggle("active", active);
+    button.classList.toggle("text-zinc-600", !active);
+  });
+
+  const list = document.querySelector("#catalogItemsList");
+  list.innerHTML = items.map((item) => {
+    const locked = activeCatalogType === "resource_roles" && item.name === "Output";
+    return `
+    <article class="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-3 ${item.active ? "" : "opacity-50"}" data-catalog-item="${item.id}">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <input class="catalog-item-name field h-9 flex-1 py-0 text-xs" value="${escapeHtml(item.name)}" maxlength="100" aria-label="Catalog item name" ${locked ? "disabled" : ""} />
+        ${activeCatalogType === "platforms" ? `<div class="relative w-full sm:w-40"><span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-zinc-600">$</span><input class="catalog-item-price field h-9 py-0 pl-7 text-xs" type="number" min="0" step="0.000001" value="${Number(item.token_price || 0)}" aria-label="Price per token" /></div>` : ""}
+        ${locked ? `<span class="rounded-full border border-acid/15 bg-acid/[0.05] px-3 py-2 text-[9px] font-semibold text-acid">Core type</span>` : `<button class="catalog-save ghost-button h-9 px-3 text-[10px]">Save</button><button class="catalog-toggle h-9 rounded-full border border-white/[0.08] px-3 text-[10px] font-semibold ${item.active ? "text-zinc-500 hover:text-red-300" : "text-acid"}">${item.active ? "Remove" : "Restore"}</button>`}
+      </div>
+      ${activeCatalogType === "platforms" ? `<div class="mt-2 text-[9px] text-zinc-700">Current price: $${Number(item.token_price || 0).toFixed(6)} per token</div>` : ""}
+    </article>`;
+  }).join("");
+
+  list.querySelectorAll(".catalog-save").forEach((button) => button.addEventListener("click", async () => {
+    const item = button.closest("[data-catalog-item]");
+    const body = { name: item.querySelector(".catalog-item-name").value.trim() };
+    if (activeCatalogType === "platforms") body.token_price = Number(item.querySelector(".catalog-item-price").value || 0);
+    await updateCatalog(Number(item.dataset.catalogItem), body);
+  }));
+  list.querySelectorAll(".catalog-toggle").forEach((button) => button.addEventListener("click", async () => {
+    const item = button.closest("[data-catalog-item]");
+    const current = items.find((candidate) => candidate.id === Number(item.dataset.catalogItem));
+    await updateCatalog(current.id, { active: !current.active });
+  }));
+}
+
+async function updateCatalog(id, body) {
+  const response = await fetch(`/api/admin/catalogs/${activeCatalogType}/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const payload = await response.json();
+  if (!response.ok) return showToast(payload.error || "Could not update this option");
+  showToast("Generation setting updated");
+  await loadCatalogs();
+}
+
+async function openCatalogsModal() {
+  if (!catalogsModal) return;
+  accountMenu?.classList.add("hidden");
+  catalogsModal.classList.remove("hidden", "pointer-events-none");
+  catalogsModal.classList.add("grid");
+  catalogsModal.setAttribute("aria-hidden", "false");
+  requestAnimationFrame(() => catalogsModalCard.classList.add("open"));
+  await loadCatalogs();
+}
+
+function closeCatalogsModal() {
+  if (!catalogsModal) return;
+  catalogsModalCard.classList.remove("open");
+  setTimeout(() => {
+    catalogsModal.classList.add("hidden", "pointer-events-none");
+    catalogsModal.classList.remove("grid");
+    catalogsModal.setAttribute("aria-hidden", "true");
+  }, 220);
+}
+
+document.querySelector("#manageCatalogsButton")?.addEventListener("click", openCatalogsModal);
+document.querySelector("#catalogsNavButton")?.addEventListener("click", openCatalogsModal);
+document.querySelector("#closeCatalogsModalButton")?.addEventListener("click", closeCatalogsModal);
+document.querySelector("#catalogsModalBackdrop")?.addEventListener("click", closeCatalogsModal);
+document.querySelectorAll(".catalog-tab").forEach((button) => button.addEventListener("click", () => { activeCatalogType = button.dataset.catalog; renderCatalogs(); }));
+document.querySelector("#catalogItemForm")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const formData = new FormData(form);
+  const body = { name: formData.get("name") };
+  if (activeCatalogType === "platforms") body.token_price = Number(formData.get("token_price") || 0);
+  const response = await fetch(`/api/admin/catalogs/${activeCatalogType}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const payload = await response.json();
+  if (!response.ok) return showToast(payload.error || "Could not add this option");
+  form.reset();
+  showToast(`${catalogCopy[activeCatalogType].singular} added`);
+  await loadCatalogs();
+});
+
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    if (usersModal && !usersModal.classList.contains("hidden")) closeUsersModal();
+    if (catalogsModal && !catalogsModal.classList.contains("hidden")) closeCatalogsModal();
+    else if (usersModal && !usersModal.classList.contains("hidden")) closeUsersModal();
     else if (!els.modal.classList.contains("hidden")) closeModal();
     else if (els.drawer && !els.drawer.classList.contains("pointer-events-none")) closeDrawer();
   }

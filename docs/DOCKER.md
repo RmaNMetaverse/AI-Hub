@@ -56,7 +56,7 @@ On each push and pull request, GitHub Actions:
 2. Runs syntax checks and end-to-end HTTP integration tests inside that image.
 3. Builds the final `production` target to catch packaging or permission problems.
 
-The integration suite covers health checks, anonymous access, first-login password creation, Admin-only account management, Creator permissions, Supervisor approval, plan creation, dedicated shot pages, streamed uploads, checksums, byte-range playback, and file deletion.
+The integration suite covers health checks, anonymous access, first-login password creation, Admin-only account and generation-catalog management, immutable platform-price snapshots, Creator permissions, Supervisor approval, plan creation, dedicated shot pages, streamed uploads, checksums, byte-range playback, reusable generation resources, and file deletion.
 
 ## Troubleshooting
 

@@ -55,7 +55,13 @@ The Docker workflow remains the source of truth for checks, tests, and productio
 - Persistent AI Plan creation
 - Drag plans between workflow stages
 - Full-page shot workspace with brief, prompt, quality, generations, issues, and next action
+- Selected-generation final preview with image, video, audio, or file output
+- Numeric generation versions (`v1`, `v2`, …) with exact prompts, model snapshots, notes, seed, platform, token usage, and frozen cost estimates
+- Reusable generation inputs such as first/last frames, depth maps, references, masks, poses, and audio
+- Shared shot library: upload once and link the same file to multiple generation versions
 - Per-shot resource workspace for images, video, audio, documents, archives, generations, and finals
+- Admin-managed AI models, generation platforms and token prices, and generation resource types
+- Historical snapshots: later catalog renames, removals, or price changes never rewrite an existing generation
 - Drag-and-drop multi-file uploads with progress and configurable 20 GiB per-file limit
 - Private streamed downloads and byte-range video/audio playback
 - SHA-256 integrity checks and persistent Docker media storage
@@ -65,7 +71,7 @@ The Docker workflow remains the source of truth for checks, tests, and productio
 - Protected sign-in and 12-hour local sessions
 - First-login password setup for Admin-created usernames
 - Admin, Supervisor, Creator, Reviewer, and Viewer roles
-- Admin-only account creation and access management
+- Admin-only account creation, access management, and generation catalog settings
 
 ## Stack
 

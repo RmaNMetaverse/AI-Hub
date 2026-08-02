@@ -46,6 +46,10 @@ Board cards, generation previews, and shot heroes load their cinematic thumbnail
 
 AI Hub calculates a SHA-256 checksum after upload and records the uploader and creation time. The original filename is preserved for display and download.
 
+Files belong to the shot library rather than a single generation. Generation records link to those files with an explicit resource type such as Output, First Frame, Last Frame, Depth Map, Reference Video, Mask, or Audio Reference. Reusing a file in another generation creates only a new metadata link; the stored bytes are not copied. Admins can add, rename, remove, or restore resource types; existing generation links keep the type name that was selected when they were saved.
+
+Generation platforms and token prices are also managed by an Admin. When a generation is submitted, AI Hub stores the platform name and token price as a snapshot and calculates the estimate from that snapshot. Changing a platform name or price only affects future generations.
+
 ## Backups and migration
 
 Docker volumes survive container rebuilds and `docker compose down`, but they do not protect against server or disk failure. A complete backup must include both:
