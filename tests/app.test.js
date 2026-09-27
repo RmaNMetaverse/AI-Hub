@@ -71,6 +71,28 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(adminActivation.status, 200);
   const adminCookie = sessionCookie(adminActivation);
 
+  const rolesResponse = await request("/api/users", { cookie: adminCookie });
+  assert.equal(rolesResponse.status, 200);
+  const initialRoles = (await rolesResponse.json()).roles;
+  assert.ok(initialRoles.some((role) => role.name === "Generator" && role.can_edit_plans));
+  const generatorRole = initialRoles.find((role) => role.name === "Generator");
+  const protectedRoleEdit = await request(`/api/roles/${generatorRole.id}`, { method: "PATCH", cookie: adminCookie, body: { name: "Renamed" } });
+  assert.equal(protectedRoleEdit.status, 400);
+
+  const customRoleResponse = await request("/api/roles", {
+    method: "POST", cookie: adminCookie,
+    body: { name: "Asset Wrangler", description: "Manages shared production assets", can_manage_libraries: true }
+  });
+  assert.equal(customRoleResponse.status, 201);
+  const customRole = await customRoleResponse.json();
+  assert.equal(customRole.can_manage_libraries, true);
+  const updatedRoleResponse = await request(`/api/roles/${customRole.id}`, {
+    method: "PATCH", cookie: adminCookie,
+    body: { name: "Asset Wrangler", description: "Manages libraries and reviews", can_manage_libraries: true, can_review_plans: true }
+  });
+  assert.equal(updatedRoleResponse.status, 200);
+  assert.equal((await updatedRoleResponse.json()).can_review_plans, true);
+
   const storedThumbnail = await request("/storage/thumbnails/cinematic-frames", { cookie: adminCookie });
   assert.equal(storedThumbnail.status, 200);
   assert.equal(storedThumbnail.headers.get("content-type"), "image/png");
@@ -79,9 +101,11 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.ok(storedThumbnailBytes.byteLength > 8);
   assert.deepEqual(storedThumbnailBytes.slice(0, 8), new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]));
 
+  let assetUserId;
   for (const account of [
     { username: "docker.creator", display_name: "Docker Creator", role: "Creator" },
-    { username: "docker.supervisor", display_name: "Docker Supervisor", role: "Supervisor" }
+    { username: "docker.supervisor", display_name: "Docker Supervisor", role: "Supervisor" },
+    { username: "docker.assets", display_name: "Asset User", role: "Asset Wrangler" }
   ]) {
     const created = await request("/api/users", {
       method: "POST",
@@ -89,6 +113,8 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
       body: account
     });
     assert.equal(created.status, 201);
+    const createdAccount = await created.json();
+    if (createdAccount.username === "docker.assets") assetUserId = createdAccount.id;
   }
 
   const creatorActivation = await request("/auth/activate", {
@@ -102,8 +128,55 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(creatorActivation.status, 200);
   const creatorCookie = sessionCookie(creatorActivation);
 
+  const assetActivation = await request("/auth/activate", {
+    method: "POST",
+    body: { username: "docker.assets", password: "Assets-Test-Password-1", confirmation: "Assets-Test-Password-1" }
+  });
+  assert.equal(assetActivation.status, 200);
+  const assetCookie = sessionCookie(assetActivation);
+
   const accountAccess = await request("/api/users", { cookie: creatorCookie });
   assert.equal(accountAccess.status, 403);
+
+  const promptPage = await request("/prompt-library", { cookie: creatorCookie });
+  assert.equal(promptPage.status, 200);
+  assert.match(await promptPage.text(), /id="libraryGrid"/);
+  const promptResponse = await request("/api/prompts", {
+    method: "POST", cookie: creatorCookie,
+    body: { title: "Orbital reveal", prompt: "Slow orbital camera around the signal tower", negative_prompt: "flicker", tags: "camera, night" }
+  });
+  assert.equal(promptResponse.status, 201);
+  const savedPrompt = await promptResponse.json();
+  assert.deepEqual(savedPrompt.tags, ["camera", "night"]);
+
+  const promptAssetBytes = new Uint8Array([80, 82, 79, 77, 80, 84]);
+  const promptAssetForm = new FormData();
+  promptAssetForm.append("file", new Blob([promptAssetBytes], { type: "video/mp4" }), "orbit-example.mp4");
+  const promptAssetResponse = await fetch(`${origin}/api/prompts/${savedPrompt.id}/assets`, { method: "POST", headers: { cookie: creatorCookie }, body: promptAssetForm });
+  assert.equal(promptAssetResponse.status, 201);
+  const savedPromptAsset = await promptAssetResponse.json();
+  assert.equal(savedPromptAsset.kind, "video");
+  const promptAssetContent = await fetch(`${origin}${savedPromptAsset.content_url}`, { headers: { cookie: creatorCookie } });
+  assert.deepEqual(new Uint8Array(await promptAssetContent.arrayBuffer()), promptAssetBytes);
+
+  const assetPage = await request("/asset-library", { cookie: creatorCookie });
+  assert.equal(assetPage.status, 200);
+  assert.match(await assetPage.text(), /asset-category-filter/);
+  const assetBytes = new Uint8Array([37, 80, 68, 70, 45, 49]);
+  const assetForm = new FormData();
+  assetForm.append("title", "Lead character sheet");
+  assetForm.append("category", "Character Sheet");
+  assetForm.append("tags", "lead, costume");
+  assetForm.append("description", "Approved turnaround sheet");
+  assetForm.append("file", new Blob([assetBytes], { type: "application/pdf" }), "lead-character.pdf");
+  const assetResponse = await fetch(`${origin}/api/library-assets`, { method: "POST", headers: { cookie: creatorCookie }, body: assetForm });
+  assert.equal(assetResponse.status, 201);
+  const savedAsset = await assetResponse.json();
+  assert.equal(savedAsset.category, "Character Sheet");
+  assert.equal(savedAsset.kind, "document");
+  assert.deepEqual(savedAsset.tags, ["lead", "costume"]);
+  const assetList = await request("/api/library-assets", { cookie: creatorCookie });
+  assert.equal((await assetList.json()).assets[0].title, "Lead character sheet");
 
   const catalogAccess = await request("/api/admin/catalogs", { cookie: creatorCookie });
   assert.equal(catalogAccess.status, 403);
@@ -409,7 +482,11 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
     cookie: creatorCookie,
     body: { status: "Approved" }
   });
-  assert.equal(forbiddenApproval.status, 403);
+  assert.equal(forbiddenApproval.status, 400);
+  const creatorApproval = await request(`/api/plans/${plan.id}/approval`, { method: "POST", cookie: creatorCookie });
+  assert.equal(creatorApproval.status, 403);
+  const customRoleApproval = await request(`/api/plans/${plan.id}/approval`, { method: "POST", cookie: assetCookie });
+  assert.equal(customRoleApproval.status, 403);
 
   const supervisorActivation = await request("/auth/activate", {
     method: "POST",
@@ -422,13 +499,16 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(supervisorActivation.status, 200);
   const supervisorCookie = sessionCookie(supervisorActivation);
 
-  const approval = await request(`/api/plans/${plan.id}/status`, {
-    method: "PATCH",
-    cookie: supervisorCookie,
-    body: { status: "Approved" }
-  });
+  const directApproval = await request(`/api/plans/${plan.id}/status`, { method: "PATCH", cookie: supervisorCookie, body: { status: "Approved" } });
+  assert.equal(directApproval.status, 400);
+  const prematureDelivery = await request(`/api/plans/${plan.id}/status`, { method: "PATCH", cookie: supervisorCookie, body: { status: "Delivered" } });
+  assert.equal(prematureDelivery.status, 400);
+  const approval = await request(`/api/plans/${plan.id}/approval`, { method: "POST", cookie: supervisorCookie });
   assert.equal(approval.status, 200);
-  assert.equal((await approval.json()).status, "Approved");
+  const approvedPlan = await approval.json();
+  assert.equal(approvedPlan.status, "Approved");
+  assert.equal(approvedPlan.approval.approved_by_name, "Docker Supervisor");
+  assert.equal(approvedPlan.approval.generation_id, firstGeneration.id);
 
   const shotPage = await request(`/plans/${plan.id}`, { cookie: supervisorCookie });
   assert.equal(shotPage.status, 200);
@@ -440,6 +520,7 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.match(html, /v1/);
   assert.match(html, /Higgsfield/);
   assert.match(html, /generation-output\.png/);
+  assert.match(html, /Approved by Docker Supervisor/);
   assert.match(html, /reference-frame\.png/);
   assert.match(html, /\/js\/plan-detail\.js/);
   assert.match(html, /id="sequenceFilter"/);
@@ -465,6 +546,14 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
     assert.deepEqual((await sortedAgain.json()).map((item) => item.id), [plan.id, relatedPlans[0].id]);
   } finally { auditDb.close(); }
 
+  const generationDelete = await request(`/api/generations/${secondGeneration.id}`, { method: "DELETE", cookie: creatorCookie });
+  assert.equal(generationDelete.status, 200);
+  assert.ok(!(await generationDelete.json()).generations.some((generation) => generation.id === secondGeneration.id));
+
+  const planDelete = await request(`/api/plans/${relatedPlans[1].id}`, { method: "DELETE", cookie: creatorCookie });
+  assert.equal(planDelete.status, 204);
+  assert.equal((await request(`/api/plans/${relatedPlans[1].id}`, { cookie: creatorCookie })).status, 404);
+
   const resourceDelete = await request(`/api/resources/${resource.id}`, {
     method: "DELETE",
     cookie: creatorCookie
@@ -475,4 +564,17 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
     headers: { cookie: creatorCookie }
   });
   assert.equal(deletedContent.status, 404);
+
+  const promptDelete = await request(`/api/prompts/${savedPrompt.id}`, { method: "DELETE", cookie: creatorCookie });
+  assert.equal(promptDelete.status, 204);
+  assert.equal((await fetch(`${origin}${savedPromptAsset.content_url}`, { headers: { cookie: creatorCookie } })).status, 404);
+  const assetDelete = await request(`/api/library-assets/${savedAsset.id}`, { method: "DELETE", cookie: creatorCookie });
+  assert.equal(assetDelete.status, 204);
+  assert.equal((await fetch(`${origin}${savedAsset.content_url}`, { headers: { cookie: creatorCookie } })).status, 404);
+
+  const occupiedRoleDelete = await request(`/api/roles/${customRole.id}`, { method: "DELETE", cookie: adminCookie });
+  assert.equal(occupiedRoleDelete.status, 400);
+  assert.equal((await request(`/api/users/${assetUserId}`, { method: "PATCH", cookie: adminCookie, body: { role: "Viewer" } })).status, 200);
+  const customRoleDelete = await request(`/api/roles/${customRole.id}`, { method: "DELETE", cookie: adminCookie });
+  assert.equal(customRoleDelete.status, 204);
 });

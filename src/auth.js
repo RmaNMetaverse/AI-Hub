@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import {
   deleteSession,
   findUserByUsername,
+  getWorkspaceRole,
   getUserBySessionHash,
   markUserLogin,
   saveSession,
@@ -16,28 +17,30 @@ const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 export const ROLE_DEFINITIONS = {
   Admin: "Full workspace control, including account management.",
   Supervisor: "Manage production, assign work, and approve final media.",
+  Generator: "Create shots, upload assets, and manage generations.",
   Creator: "Create plans, edit creative details, and manage generations.",
   Reviewer: "Review work, request revisions, and add feedback.",
   Viewer: "Read-only access to projects and approved production data."
 };
 
-const allowedStatusesByRole = {
-  Admin: ["Idea", "Brief Ready", "Generating", "Review", "Revision", "Approved", "Delivered"],
-  Supervisor: ["Idea", "Brief Ready", "Generating", "Review", "Revision", "Approved", "Delivered"],
-  Creator: ["Idea", "Brief Ready", "Generating", "Review", "Revision"],
-  Reviewer: ["Review", "Revision"],
-  Viewer: []
-};
-
 export function permissionsFor(role) {
+  const definition = getWorkspaceRole(role);
+  const canManageWorkflow = Boolean(definition?.can_manage_workflow);
+  const canReviewPlans = Boolean(definition?.can_review_plans);
+  const canApprovePlans = ["Admin", "Supervisor"].includes(role);
+  const allowedStatuses = canManageWorkflow
+    ? ["Idea", "Brief Ready", "Generating", "Review", "Revision", ...(canApprovePlans ? ["Delivered"] : [])]
+    : canReviewPlans ? ["Review", "Revision"] : [];
   return {
-    canManageAccounts: role === "Admin",
-    canCreatePlans: ["Admin", "Supervisor", "Creator"].includes(role),
-    canEditPlans: ["Admin", "Supervisor", "Creator"].includes(role),
-    canManageWorkflow: ["Admin", "Supervisor", "Creator"].includes(role),
-    canReviewPlans: ["Admin", "Supervisor", "Reviewer"].includes(role),
-    canApprovePlans: ["Admin", "Supervisor"].includes(role),
-    allowedStatuses: allowedStatusesByRole[role] || []
+    canManageAccounts: Boolean(definition?.can_manage_accounts),
+    canCreatePlans: Boolean(definition?.can_create_plans),
+    canEditPlans: Boolean(definition?.can_edit_plans),
+    canDeletePlans: Boolean(definition?.can_delete_plans),
+    canManageWorkflow,
+    canReviewPlans,
+    canApprovePlans,
+    canManageLibraries: Boolean(definition?.can_manage_libraries),
+    allowedStatuses
   };
 }
 

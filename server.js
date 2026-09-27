@@ -5,29 +5,49 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { matchingShotNumbers, shotFilters } from "./src/shot-numbers.js";
 import {
+  approvePlan,
   createAccount,
+  createLibraryAsset,
+  createPrompt,
+  createPromptAsset,
   createCatalogItem,
   createGeneration,
   createPlan,
   createResource,
+  createWorkspaceRole,
+  deleteGeneration,
+  deleteLibraryAsset,
+  deletePlan,
+  deletePrompt,
+  deletePromptAsset,
   deleteResourceRecord,
   getDashboard,
   getGenerationCatalogs,
   getGeneration,
+  getLibraryAsset,
   getPlan,
+  getPrompt,
+  getPromptAsset,
   getResource,
+  getWorkspaceRole,
+  listLibraryAssets,
   listAccounts,
+  listPrompts,
   listResources,
+  listWorkspaceRoles,
   selectGeneration,
   updatePlan,
   updatePlanStatus,
   updateAccount,
+  updateLibraryAsset,
+  updatePrompt,
+  updateWorkspaceRole,
+  deleteWorkspaceRole,
   updateCatalogItem,
   updateGeneration,
   updateResource
 } from "./src/db.js";
 import {
-  ROLE_DEFINITIONS,
   activateAccount,
   authMiddleware,
   authenticateAccount,
@@ -50,6 +70,8 @@ import {
   resourceKind,
   safeOriginalName,
   storageKeyForFile,
+  uploadAssetLibraryFile,
+  uploadPromptAssetFile,
   uploadResourceFile
 } from "./src/storage.js";
 
@@ -59,6 +81,7 @@ const app = express();
 const port = Number(process.env.PORT || 4310);
 const loginAttempts = new Map();
 const resourceCategories = ["Reference", "Generation", "Final", "Audio", "Document", "Other"];
+const assetCategories = ["Character Sheet", "Image", "Video Tutorial", "Documentation", "Reference", "Audio", "Other"];
 
 function resourceForClient(resource) {
   if (!resource) return null;
@@ -82,6 +105,29 @@ function planForClient(plan) {
     generations: Array.isArray(plan.generations) ? plan.generations.map(generationForClient) : [],
     selected_generation: generationForClient(plan.selected_generation)
   };
+}
+
+function fileForClient(file, route) {
+  if (!file) return null;
+  const { storage_key: _storageKey, ...publicFile } = file;
+  return {
+    ...publicFile,
+    content_url: `${route}/${file.id}/content`,
+    download_url: `${route}/${file.id}/content?download=1`
+  };
+}
+
+function promptForClient(prompt) {
+  if (!prompt) return null;
+  return { ...prompt, assets: prompt.assets.map((asset) => fileForClient(asset, "/prompt-assets")) };
+}
+
+function libraryAssetForClient(asset) {
+  return fileForClient(asset, "/library-assets");
+}
+
+function roleDefinitions() {
+  return Object.fromEntries(listWorkspaceRoles().map((role) => [role.name, role.description]));
 }
 
 app.set("view engine", "ejs");
@@ -226,11 +272,13 @@ app.get("/", (request, response) => {
   try { numberFilters = shotFilters(request.query); } catch (error) { return response.status(400).send(error.message); }
   const dashboard = getDashboard();
   const generationCatalogs = getGenerationCatalogs();
+  const workspaceRoles = listWorkspaceRoles();
   response.render("index", {
     ...dashboard,
     currentUser: request.user,
     permissions: request.permissions,
-    roleDefinitions: ROLE_DEFINITIONS,
+    roleDefinitions: roleDefinitions(),
+    workspaceRoles,
     generationCatalogs,
     numberFilters,
     serializedPlans: JSON.stringify(dashboard.plans).replaceAll("<", "\\u003c"),
@@ -240,11 +288,37 @@ app.get("/", (request, response) => {
 });
 
 function allowedStatusesForPlan(user, permissions, plan) {
-  if (["Admin", "Supervisor"].includes(user.role)) return permissions.allowedStatuses;
-  if (user.role === "Creator" && ["Approved", "Delivered"].includes(plan.status)) return [];
-  if (user.role === "Reviewer" && plan.status !== "Review") return [];
+  if (["Approved", "Delivered"].includes(plan.status) && !permissions.canApprovePlans) return [];
+  if (permissions.canReviewPlans && !permissions.canManageWorkflow && plan.status !== "Review") return [];
   return permissions.allowedStatuses;
 }
+
+app.get("/prompt-library", (request, response) => {
+  const dashboard = getDashboard();
+  const prompts = listPrompts().map(promptForClient);
+  response.render("prompt-library", {
+    project: dashboard.project,
+    currentUser: request.user,
+    permissions: request.permissions,
+    maxUploadBytes,
+    serializedPrompts: JSON.stringify(prompts).replaceAll("<", "\\u003c"),
+    serializedPermissions: JSON.stringify(request.permissions).replaceAll("<", "\\u003c")
+  });
+});
+
+app.get("/asset-library", (request, response) => {
+  const dashboard = getDashboard();
+  const assets = listLibraryAssets().map(libraryAssetForClient);
+  response.render("asset-library", {
+    project: dashboard.project,
+    currentUser: request.user,
+    permissions: request.permissions,
+    assetCategories,
+    maxUploadBytes,
+    serializedAssets: JSON.stringify(assets).replaceAll("<", "\\u003c"),
+    serializedPermissions: JSON.stringify(request.permissions).replaceAll("<", "\\u003c")
+  });
+});
 
 app.get("/plans/:id", (request, response) => {
   const plan = getPlan(Number(request.params.id));
@@ -305,20 +379,34 @@ app.patch("/api/plans/:id/status", (request, response) => {
   try {
     const currentPlan = getPlan(Number(request.params.id));
     if (!currentPlan) return response.status(404).json({ error: "Plan not found" });
-    if (request.user.role === "Creator" && ["Approved", "Delivered"].includes(currentPlan.status)) {
+    if (["Approved", "Delivered"].includes(currentPlan.status) && !request.permissions.canApprovePlans) {
       return response.status(403).json({ error: "Approved work can only be changed by an Admin or Supervisor" });
     }
-    if (request.user.role === "Reviewer" && currentPlan.status !== "Review") {
+    if (request.permissions.canReviewPlans && !request.permissions.canManageWorkflow && currentPlan.status !== "Review") {
       return response.status(403).json({ error: "Reviewers can only act on plans currently in review" });
     }
-    if (["Approved", "Delivered"].includes(request.body.status) && !currentPlan.selected_generation_id) {
+    if (request.body.status === "Approved") {
+      return response.status(400).json({ error: "Use the approval action to approve a shot" });
+    }
+    if (request.body.status === "Delivered" && !currentPlan.selected_generation_id) {
       return response.status(400).json({ error: "Select a current final generation before approving this shot" });
+    }
+    if (request.body.status === "Delivered" && currentPlan.status !== "Approved") {
+      return response.status(400).json({ error: "Approve the selected generation before marking the shot delivered" });
     }
     if (!request.permissions.allowedStatuses.includes(request.body.status)) {
       return response.status(403).json({ error: "Your role cannot move a plan to that status" });
     }
     const plan = updatePlanStatus(Number(request.params.id), request.body.status);
     response.json(planForClient(plan));
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/plans/:id/approval", requirePermission("canApprovePlans"), (request, response) => {
+  try {
+    response.json(planForClient(approvePlan(Number(request.params.id), request.user.id)));
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
@@ -350,6 +438,25 @@ app.patch("/api/generations/:id", requirePermission("canEditPlans"), (request, r
     updateGeneration(generation.id, request.body);
     const updatedPlan = planForClient(getPlan(generation.plan_id));
     response.json({ generation: updatedPlan.generations.find((item) => item.id === generation.id), plan: updatedPlan });
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.delete("/api/generations/:id", requirePermission("canDeletePlans"), (request, response) => {
+  try {
+    const planId = deleteGeneration(Number(request.params.id));
+    response.json(planForClient(getPlan(planId)));
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.delete("/api/plans/:id", requirePermission("canDeletePlans"), async (request, response) => {
+  try {
+    const storageKeys = deletePlan(Number(request.params.id));
+    await Promise.allSettled(storageKeys.map((key) => removeStoredFile(key)));
+    response.status(204).end();
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
@@ -451,14 +558,11 @@ app.delete("/api/resources/:id", requirePermission("canEditPlans"), async (reque
   }
 });
 
-app.get("/resources/:id/content", async (request, response) => {
-  const resource = getResource(Number(request.params.id));
-  if (!resource) return response.status(404).json({ error: "Resource not found" });
-
+async function streamStoredFile(record, request, response) {
   let filePath;
   let fileStat;
   try {
-    filePath = absoluteStoragePath(resource.storage_key);
+    filePath = absoluteStoragePath(record.storage_key);
     fileStat = await fsp.stat(filePath);
   } catch (_error) {
     return response.status(404).json({ error: "Stored file not found" });
@@ -468,9 +572,9 @@ app.get("/resources/:id/content", async (request, response) => {
   const forceDownload = request.query.download === "1";
   response.setHeader("Accept-Ranges", "bytes");
   response.setHeader("Cache-Control", "private, max-age=3600");
-  response.setHeader("Content-Type", resource.mime_type || "application/octet-stream");
-  response.setHeader("Content-Disposition", contentDisposition(resource.original_name, !forceDownload && canPreviewInline(resource.mime_type)));
-  response.setHeader("ETag", `\"${resource.checksum_sha256}\"`);
+  response.setHeader("Content-Type", record.mime_type || "application/octet-stream");
+  response.setHeader("Content-Disposition", contentDisposition(record.original_name, !forceDownload && canPreviewInline(record.mime_type)));
+  response.setHeader("ETag", `\"${record.checksum_sha256}\"`);
   response.setHeader("Last-Modified", fileStat.mtime.toUTCString());
 
   const rangeHeader = request.headers.range;
@@ -498,10 +602,149 @@ app.get("/resources/:id/content", async (request, response) => {
   response.setHeader("Content-Length", totalSize);
   if (request.method === "HEAD") return response.end();
   fs.createReadStream(filePath).pipe(response);
+}
+
+app.get("/resources/:id/content", async (request, response) => {
+  const resource = getResource(Number(request.params.id));
+  if (!resource) return response.status(404).json({ error: "Resource not found" });
+  await streamStoredFile(resource, request, response);
+});
+
+function receiveLibraryUpload(upload, request, response, save) {
+  upload(request, response, async (uploadError) => {
+    let storageKey;
+    try {
+      if (uploadError) {
+        const status = uploadError.code === "LIMIT_FILE_SIZE" ? 413 : 400;
+        const message = uploadError.code === "LIMIT_FILE_SIZE"
+          ? `This file is larger than the ${Math.round(maxUploadBytes / 1024 / 1024 / 1024)} GB upload limit`
+          : uploadError.message;
+        return response.status(status).json({ error: message });
+      }
+      if (!request.file) return response.status(400).json({ error: "Choose a file to upload" });
+      storageKey = storageKeyForFile(request.file.path);
+      if (!request.file.size) {
+        await removeStoredFile(storageKey);
+        return response.status(400).json({ error: "Empty files cannot be uploaded" });
+      }
+      const originalName = safeOriginalName(request.file.originalname);
+      const saved = await save({
+        originalName,
+        storageKey,
+        mimeType: String(request.file.mimetype || "application/octet-stream").slice(0, 160),
+        kind: resourceKind(request.file.mimetype, originalName),
+        sizeBytes: request.file.size,
+        checksumSha256: await checksumFile(request.file.path)
+      });
+      response.status(201).json(saved);
+    } catch (error) {
+      if (storageKey) await removeStoredFile(storageKey).catch(() => {});
+      response.status(400).json({ error: error.message || "The upload could not be saved" });
+    }
+  });
+}
+
+app.get("/api/prompts", (_request, response) => {
+  response.json(listPrompts().map(promptForClient));
+});
+
+app.post("/api/prompts", requirePermission("canManageLibraries"), (request, response) => {
+  try {
+    response.status(201).json(promptForClient(createPrompt(request.body, request.user.id)));
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.patch("/api/prompts/:id", requirePermission("canManageLibraries"), (request, response) => {
+  try {
+    response.json(promptForClient(updatePrompt(Number(request.params.id), request.body)));
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.delete("/api/prompts/:id", requirePermission("canManageLibraries"), async (request, response) => {
+  try {
+    const storageKeys = deletePrompt(Number(request.params.id));
+    await Promise.allSettled(storageKeys.map((key) => removeStoredFile(key)));
+    response.status(204).end();
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/prompts/:id/assets", requirePermission("canManageLibraries"), (request, response) => {
+  const prompt = getPrompt(Number(request.params.id));
+  if (!prompt) return response.status(404).json({ error: "Prompt not found" });
+  receiveLibraryUpload(uploadPromptAssetFile, request, response, (file) => fileForClient(createPromptAsset({
+    promptId: prompt.id,
+    uploadedBy: request.user.id,
+    ...file
+  }), "/prompt-assets"));
+});
+
+app.delete("/api/prompt-assets/:id", requirePermission("canManageLibraries"), async (request, response) => {
+  try {
+    const asset = deletePromptAsset(Number(request.params.id));
+    await removeStoredFile(asset.storage_key);
+    response.status(204).end();
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.get("/prompt-assets/:id/content", async (request, response) => {
+  const asset = getPromptAsset(Number(request.params.id));
+  if (!asset) return response.status(404).json({ error: "Prompt asset not found" });
+  await streamStoredFile(asset, request, response);
+});
+
+app.get("/api/library-assets", (_request, response) => {
+  response.json({ assets: listLibraryAssets().map(libraryAssetForClient), categories: assetCategories });
+});
+
+app.post("/api/library-assets", requirePermission("canManageLibraries"), (request, response) => {
+  receiveLibraryUpload(uploadAssetLibraryFile, request, response, (file) => {
+    const category = assetCategories.includes(request.body.category) ? request.body.category : "Other";
+    return libraryAssetForClient(createLibraryAsset({
+      title: String(request.body.title || file.originalName).trim().slice(0, 160),
+      description: String(request.body.description || "").trim().slice(0, 3000),
+      category,
+      tags: String(request.body.tags || "").trim().slice(0, 1000),
+      uploadedBy: request.user.id,
+      ...file
+    }));
+  });
+});
+
+app.patch("/api/library-assets/:id", requirePermission("canManageLibraries"), (request, response) => {
+  try {
+    if (request.body.category !== undefined && !assetCategories.includes(request.body.category)) throw new Error("Invalid asset category");
+    response.json(libraryAssetForClient(updateLibraryAsset(Number(request.params.id), request.body)));
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.delete("/api/library-assets/:id", requirePermission("canManageLibraries"), async (request, response) => {
+  try {
+    const asset = deleteLibraryAsset(Number(request.params.id));
+    await removeStoredFile(asset.storage_key);
+    response.status(204).end();
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.get("/library-assets/:id/content", async (request, response) => {
+  const asset = getLibraryAsset(Number(request.params.id));
+  if (!asset) return response.status(404).json({ error: "Asset not found" });
+  await streamStoredFile(asset, request, response);
 });
 
 app.get("/api/users", requirePermission("canManageAccounts"), (_request, response) => {
-  response.json({ users: listAccounts(), roles: ROLE_DEFINITIONS });
+  response.json({ users: listAccounts(), roles: listWorkspaceRoles() });
 });
 
 app.post("/api/users", requirePermission("canManageAccounts"), (request, response) => {
@@ -511,7 +754,7 @@ app.post("/api/users", requirePermission("canManageAccounts"), (request, respons
     const role = String(request.body.role || "Viewer");
     if (!validateUsername(username)) throw new Error("Use 3–32 lowercase letters, numbers, dots, dashes, or underscores");
     if (!displayName || displayName.length > 80) throw new Error("Display name is required");
-    if (!Object.hasOwn(ROLE_DEFINITIONS, role)) throw new Error("Invalid role");
+    if (!getWorkspaceRole(role)) throw new Error("Invalid role");
     const user = createAccount({ username, displayName, role, createdBy: request.user.id });
     response.status(201).json(user);
   } catch (error) {
@@ -522,9 +765,34 @@ app.post("/api/users", requirePermission("canManageAccounts"), (request, respons
 app.patch("/api/users/:id", requirePermission("canManageAccounts"), (request, response) => {
   try {
     const role = request.body.role;
-    if (role !== undefined && !Object.hasOwn(ROLE_DEFINITIONS, role)) throw new Error("Invalid role");
+    if (role !== undefined && !getWorkspaceRole(role)) throw new Error("Invalid role");
     const user = updateAccount(Number(request.params.id), { role, active: request.body.active });
     response.json(user);
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/roles", requirePermission("canManageAccounts"), (request, response) => {
+  try {
+    response.status(201).json(createWorkspaceRole(request.body));
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.patch("/api/roles/:id", requirePermission("canManageAccounts"), (request, response) => {
+  try {
+    response.json(updateWorkspaceRole(Number(request.params.id), request.body));
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.delete("/api/roles/:id", requirePermission("canManageAccounts"), (request, response) => {
+  try {
+    deleteWorkspaceRole(Number(request.params.id));
+    response.status(204).end();
   } catch (error) {
     response.status(400).json({ error: error.message });
   }

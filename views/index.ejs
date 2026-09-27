@@ -29,7 +29,8 @@
 
         <nav class="mt-6 space-y-1" aria-label="Main navigation">
           <a href="/" class="nav-item active" aria-current="page"><i data-lucide="layout-grid" class="h-[17px] w-[17px]"></i>Production</a>
-          <button type="button" class="nav-item" data-planned-feature="Prompt Library" title="Planned feature"><i data-lucide="book-open" class="h-[17px] w-[17px]"></i>Prompt Library</button>
+          <a href="/prompt-library" class="nav-item"><i data-lucide="book-open" class="h-[17px] w-[17px]"></i>Prompt Library</a>
+          <a href="/asset-library" class="nav-item"><i data-lucide="library" class="h-[17px] w-[17px]"></i>Asset Library</a>
         </nav>
 
         <div class="mt-7 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-700">Workspace</div>
@@ -106,22 +107,41 @@
     <% if (permissions.canManageAccounts) { %>
     <div id="usersModal" class="pointer-events-none fixed inset-0 z-[65] hidden place-items-center p-4" aria-hidden="true">
       <button id="usersModalBackdrop" class="modal-backdrop absolute inset-0 bg-black/80" aria-label="Close account management"></button>
-      <div id="usersModalCard" class="modal-card relative z-10 grid max-h-[92vh] w-full max-w-[980px] overflow-hidden rounded-3xl border border-white/10 bg-[#111214] shadow-float lg:grid-cols-[340px_1fr]">
-        <section class="border-b border-white/[0.08] p-6 lg:border-b-0 lg:border-r">
+      <div id="usersModalCard" class="modal-card relative z-10 grid max-h-[92vh] w-full max-w-[1120px] overflow-y-auto rounded-3xl border border-white/10 bg-[#111214] shadow-float lg:grid-cols-[360px_1fr] lg:overflow-hidden">
+        <section class="border-b border-white/[0.08] p-6 lg:overflow-y-auto lg:border-b-0 lg:border-r">
           <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-acid">Admin controls</div>
           <h2 class="mt-2 text-2xl font-semibold tracking-tight">Create an account</h2>
           <p class="mt-2 text-xs leading-5 text-zinc-500">Create only a username and assign access. The user creates their own password on first sign-in.</p>
           <form id="newUserForm" class="mt-6 space-y-4">
             <label><span class="field-label">Display name</span><input name="display_name" class="field" placeholder="e.g. Sara Moradi" required /></label>
             <label><span class="field-label">Username</span><div class="relative"><span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-zinc-600">@</span><input name="username" class="field pl-8" placeholder="sara.m" pattern="[a-z0-9][a-z0-9._-]{2,31}" autocapitalize="none" required /></div></label>
-            <label><span class="field-label">Role</span><select name="role" class="field"><% Object.entries(roleDefinitions).forEach(([role]) => { %><option <%= role === 'Creator' ? 'selected' : '' %>><%= role %></option><% }) %></select></label>
+            <label><span class="field-label">Role</span><select name="role" class="field"><% workspaceRoles.forEach(role => { %><option <%= role.name === 'Generator' ? 'selected' : '' %>><%= role.name %></option><% }) %></select></label>
             <div id="roleDescription" class="rounded-xl border border-white/[0.07] bg-black/20 p-3 text-[11px] leading-5 text-zinc-600"></div>
             <button type="submit" class="primary-button h-11 w-full"><span>Create account</span><i data-lucide="user-plus" class="h-4 w-4"></i></button>
           </form>
+          <div class="my-6 border-t border-white/[0.07]"></div>
+          <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-acid">Custom access</div>
+          <h3 class="mt-2 text-lg font-semibold">Define a role</h3>
+          <form id="newRoleForm" class="mt-4 space-y-3">
+            <label><span class="field-label">Role name</span><input name="name" class="field" maxlength="40" placeholder="e.g. Art Director" required /></label>
+            <label><span class="field-label">Description</span><input name="description" class="field" maxlength="240" placeholder="What this role is responsible for" /></label>
+            <fieldset class="grid grid-cols-2 gap-2 text-[10px] text-zinc-500">
+              <label class="flex items-center gap-2"><input type="checkbox" name="can_create_plans" /> Create shots</label>
+              <label class="flex items-center gap-2"><input type="checkbox" name="can_edit_plans" /> Edit generations</label>
+              <label class="flex items-center gap-2"><input type="checkbox" name="can_delete_plans" /> Delete shots</label>
+              <label class="flex items-center gap-2"><input type="checkbox" name="can_manage_workflow" /> Change workflow</label>
+              <label class="flex items-center gap-2"><input type="checkbox" name="can_review_plans" /> Review shots</label>
+              <label class="flex items-center gap-2"><input type="checkbox" name="can_manage_libraries" /> Manage libraries</label>
+              <label class="col-span-2 flex items-center gap-2"><input type="checkbox" name="can_manage_accounts" /> Manage accounts and settings</label>
+            </fieldset>
+            <p class="text-[10px] leading-4 text-zinc-700">Approval stays exclusive to the built-in Admin and Supervisor roles.</p>
+            <button type="submit" class="ghost-button h-10 w-full">Add custom role</button>
+          </form>
         </section>
-        <section class="flex min-h-0 flex-col p-6">
+        <section class="min-h-0 p-6 lg:overflow-y-auto">
           <div class="flex items-start justify-between"><div><div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">Workspace access</div><h3 class="mt-2 text-xl font-semibold">Team accounts</h3></div><button id="closeUsersModalButton" class="icon-button" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
-          <div id="usersList" class="mt-5 min-h-[260px] flex-1 space-y-2 overflow-y-auto pr-1"></div>
+          <div id="usersList" class="mt-5 max-h-[330px] min-h-[220px] space-y-2 overflow-y-auto pr-1"></div>
+          <div class="mt-7 border-t border-white/[0.07] pt-6"><div class="flex items-center justify-between"><div><div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-zinc-600">Permission sets</div><h3 class="mt-1 text-lg font-semibold">Workspace roles</h3></div><span id="roleCount" class="text-[10px] text-zinc-600"></span></div><div id="rolesList" class="mt-4 space-y-2"></div></div>
         </section>
       </div>
     </div>
@@ -174,6 +194,7 @@
       window.__AI_HUB_CURRENT_USER__ = <%- serializedUser %>;
       window.__AI_HUB_PERMISSIONS__ = <%- serializedPermissions %>;
       window.__AI_HUB_ROLES__ = <%- JSON.stringify(roleDefinitions).replaceAll('<', '\\u003c') %>;
+      window.__AI_HUB_WORKSPACE_ROLES__ = <%- JSON.stringify(workspaceRoles).replaceAll('<', '\\u003c') %>;
       window.__AI_HUB_GENERATION_CATALOGS__ = <%- JSON.stringify(generationCatalogs).replaceAll('<', '\\u003c') %>;
     </script>
     <script src="/vendor/lucide/lucide.js"></script>

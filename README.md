@@ -40,7 +40,7 @@ GitHub Actions also builds the Docker verification target, runs all checks and t
 
 See [`docs/DOCKER.md`](docs/DOCKER.md) for the container architecture and [`docs/STORAGE.md`](docs/STORAGE.md) for media storage, Linux disk configuration, and backup notes.
 
-See [`deploy.md`](deploy.md) for the project structure, Windows test runs, and Ubuntu deployment behind Nginx with HTTPS.
+See [`deploy.md`](deploy.md) for straightforward first-run and later-run instructions on Windows, macOS, and Ubuntu, including Nginx setup and backups.
 
 ## Optional host fallback
 
@@ -70,11 +70,16 @@ The Docker workflow remains the source of truth for checks, tests, and productio
 - SHA-256 integrity checks and persistent Docker media storage
 - Storage-backed, authenticated thumbnails for the grid and shot pages
 - Status and final-approval updates
+- Audited approvals tied to the selected generation; only Admin and Supervisor accounts can approve
+- Shot, generation, resource, prompt, prompt-example, and library-asset deletion with stored-file cleanup
+- Prompt Library with reusable prompts, tags, negative prompts, and image/video/audio/document examples
+- Searchable and filterable Asset Library for character sheets, images, tutorials, PDFs, references, audio, archives, and other production files
 - Local SQLite persistence
 - Protected sign-in and 12-hour local sessions
 - First-login password setup for Admin-created usernames
-- Admin, Supervisor, Creator, Reviewer, and Viewer roles
-- Admin-only account creation, access management, and generation catalog settings
+- Admin, Supervisor, Generator, Creator, Reviewer, and Viewer roles
+- Admin-defined custom roles with granular account, shot, workflow, deletion, review, and library permissions
+- Admin-only account creation, role management, access management, and generation catalog settings
 
 ## Stack
 
@@ -90,6 +95,9 @@ The Docker workflow remains the source of truth for checks, tests, and productio
 
 - **Admin:** Full workspace and account control.
 - **Supervisor:** Manages production and approves final media.
+- **Generator:** Creates shots, uploads assets, and manages generations.
 - **Creator:** Creates plans and manages creative work.
 - **Reviewer:** Reviews work and requests revisions.
 - **Viewer:** Read-only workspace access.
+
+Admins can add custom roles and choose their permissions. Approval remains exclusive to the built-in Admin and Supervisor roles.

@@ -160,6 +160,78 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS generation_resources_resource_idx ON generation_resources(resource_id);
 `);
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS workspace_roles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    description TEXT NOT NULL DEFAULT '',
+    protected INTEGER NOT NULL DEFAULT 0,
+    can_manage_accounts INTEGER NOT NULL DEFAULT 0,
+    can_create_plans INTEGER NOT NULL DEFAULT 0,
+    can_edit_plans INTEGER NOT NULL DEFAULT 0,
+    can_delete_plans INTEGER NOT NULL DEFAULT 0,
+    can_manage_workflow INTEGER NOT NULL DEFAULT 0,
+    can_review_plans INTEGER NOT NULL DEFAULT 0,
+    can_manage_libraries INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS plan_approvals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id INTEGER NOT NULL REFERENCES ai_plans(id) ON DELETE CASCADE,
+    generation_id INTEGER NOT NULL REFERENCES generations(id) ON DELETE CASCADE,
+    approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    approved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS prompt_library (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    prompt TEXT NOT NULL,
+    negative_prompt TEXT NOT NULL DEFAULT '',
+    tags TEXT NOT NULL DEFAULT '',
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS prompt_assets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    prompt_id INTEGER NOT NULL REFERENCES prompt_library(id) ON DELETE CASCADE,
+    uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    original_name TEXT NOT NULL,
+    storage_key TEXT NOT NULL UNIQUE,
+    mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+    kind TEXT NOT NULL DEFAULT 'other',
+    size_bytes INTEGER NOT NULL,
+    checksum_sha256 TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS asset_library (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    category TEXT NOT NULL DEFAULT 'Other',
+    tags TEXT NOT NULL DEFAULT '',
+    uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    original_name TEXT NOT NULL,
+    storage_key TEXT NOT NULL UNIQUE,
+    mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+    kind TEXT NOT NULL DEFAULT 'other',
+    size_bytes INTEGER NOT NULL,
+    checksum_sha256 TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE INDEX IF NOT EXISTS plan_approvals_plan_idx ON plan_approvals(plan_id, approved_at DESC);
+  CREATE INDEX IF NOT EXISTS prompt_library_updated_idx ON prompt_library(updated_at DESC);
+  CREATE INDEX IF NOT EXISTS prompt_assets_prompt_idx ON prompt_assets(prompt_id);
+  CREATE INDEX IF NOT EXISTS asset_library_category_idx ON asset_library(category, created_at DESC);
+`);
+
 function ensureColumn(table, column, definition) {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all();
   if (!columns.some((item) => item.name === column)) {
@@ -187,7 +259,36 @@ ensureColumn("generations", "token_count", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("generations", "token_price_snapshot", "REAL NOT NULL DEFAULT 0");
 ensureColumn("generations", "created_by", "INTEGER");
 ensureColumn("generations", "updated_at", "TEXT");
+ensureColumn("users", "role_id", "INTEGER REFERENCES workspace_roles(id)");
 db.exec("CREATE INDEX IF NOT EXISTS ai_plans_selected_generation_idx ON ai_plans(selected_generation_id)");
+
+const defaultWorkspaceRoles = [
+  ["Admin", "Full workspace and account control.", 1, 1, 1, 1, 1, 1, 1, 1],
+  ["Supervisor", "Manage production and approve generated shots.", 1, 0, 1, 1, 1, 1, 1, 1],
+  ["Generator", "Create shots, upload assets, and manage generations.", 1, 0, 1, 1, 1, 1, 0, 1],
+  ["Creator", "Create plans, edit creative details, and manage generations.", 1, 0, 1, 1, 1, 1, 0, 1],
+  ["Reviewer", "Review work and request revisions.", 1, 0, 0, 0, 0, 0, 1, 0],
+  ["Viewer", "Read-only workspace access.", 1, 0, 0, 0, 0, 0, 0, 0]
+];
+const seedWorkspaceRoles = db.transaction(() => {
+  const insert = db.prepare(`
+    INSERT INTO workspace_roles (
+      name, description, protected, can_manage_accounts, can_create_plans, can_edit_plans,
+      can_delete_plans, can_manage_workflow, can_review_plans, can_manage_libraries
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET
+      description = excluded.description, protected = 1,
+      can_manage_accounts = excluded.can_manage_accounts,
+      can_create_plans = excluded.can_create_plans,
+      can_edit_plans = excluded.can_edit_plans,
+      can_delete_plans = excluded.can_delete_plans,
+      can_manage_workflow = excluded.can_manage_workflow,
+      can_review_plans = excluded.can_review_plans,
+      can_manage_libraries = excluded.can_manage_libraries
+  `);
+  defaultWorkspaceRoles.forEach((role) => insert.run(...role));
+});
+seedWorkspaceRoles();
 
 const defaultGenerationModels = ["Seedance 2.5", "Seedance 2.0", "Seedance 2.0 Fast", "Kling 3.0", "Gemini Omni", "LTX"];
 const defaultGenerationPlatforms = ["ComfyUI", "Higgsfield", "Vidax"];
@@ -217,6 +318,111 @@ function seedInitialAdmin() {
 }
 
 seedInitialAdmin();
+
+db.exec(`
+  UPDATE users
+  SET role_id = (SELECT id FROM workspace_roles WHERE name = users.role COLLATE NOCASE)
+  WHERE role_id IS NULL;
+`);
+
+function roleRowByName(name) {
+  return db.prepare("SELECT * FROM workspace_roles WHERE name = ? COLLATE NOCASE").get(String(name || "").trim());
+}
+
+export function getWorkspaceRole(name) {
+  const role = roleRowByName(name);
+  return role ? normalizeWorkspaceRole(role) : null;
+}
+
+function normalizeWorkspaceRole(role) {
+  if (!role) return null;
+  return {
+    ...role,
+    protected: Boolean(role.protected),
+    can_manage_accounts: Boolean(role.can_manage_accounts),
+    can_create_plans: Boolean(role.can_create_plans),
+    can_edit_plans: Boolean(role.can_edit_plans),
+    can_delete_plans: Boolean(role.can_delete_plans),
+    can_manage_workflow: Boolean(role.can_manage_workflow),
+    can_review_plans: Boolean(role.can_review_plans),
+    can_manage_libraries: Boolean(role.can_manage_libraries)
+  };
+}
+
+export function listWorkspaceRoles() {
+  return db.prepare(`
+    SELECT wr.*, (SELECT COUNT(*) FROM users u WHERE u.role_id = wr.id) AS user_count
+    FROM workspace_roles wr
+    ORDER BY CASE wr.name WHEN 'Admin' THEN 1 WHEN 'Supervisor' THEN 2 WHEN 'Generator' THEN 3 ELSE 4 END,
+      wr.name COLLATE NOCASE
+  `).all().map(normalizeWorkspaceRole);
+}
+
+function roleInput(input, current = {}) {
+  const name = String(input.name ?? current.name ?? "").trim().slice(0, 40);
+  if (!/^[A-Za-z][A-Za-z0-9 _-]{1,39}$/.test(name)) throw new Error("Role name must be 2–40 letters, numbers, spaces, dashes, or underscores");
+  return {
+    name,
+    description: String(input.description ?? current.description ?? "").trim().slice(0, 240),
+    can_manage_accounts: Number(Boolean(input.can_manage_accounts ?? current.can_manage_accounts)),
+    can_create_plans: Number(Boolean(input.can_create_plans ?? current.can_create_plans)),
+    can_edit_plans: Number(Boolean(input.can_edit_plans ?? current.can_edit_plans)),
+    can_delete_plans: Number(Boolean(input.can_delete_plans ?? current.can_delete_plans)),
+    can_manage_workflow: Number(Boolean(input.can_manage_workflow ?? current.can_manage_workflow)),
+    can_review_plans: Number(Boolean(input.can_review_plans ?? current.can_review_plans)),
+    can_manage_libraries: Number(Boolean(input.can_manage_libraries ?? current.can_manage_libraries))
+  };
+}
+
+export function createWorkspaceRole(input) {
+  const role = roleInput(input);
+  try {
+    const result = db.prepare(`
+      INSERT INTO workspace_roles (
+        name, description, can_manage_accounts, can_create_plans, can_edit_plans,
+        can_delete_plans, can_manage_workflow, can_review_plans, can_manage_libraries
+      ) VALUES (
+        @name, @description, @can_manage_accounts, @can_create_plans, @can_edit_plans,
+        @can_delete_plans, @can_manage_workflow, @can_review_plans, @can_manage_libraries
+      )
+    `).run(role);
+    return normalizeWorkspaceRole(db.prepare("SELECT * FROM workspace_roles WHERE id = ?").get(Number(result.lastInsertRowid)));
+  } catch (error) {
+    if (error.code === "SQLITE_CONSTRAINT_UNIQUE") throw new Error("That role name already exists");
+    throw error;
+  }
+}
+
+export function updateWorkspaceRole(id, input) {
+  const current = db.prepare("SELECT * FROM workspace_roles WHERE id = ?").get(id);
+  if (!current) throw new Error("Role not found");
+  if (current.protected) throw new Error("Built-in roles cannot be changed");
+  const role = roleInput(input, current);
+  try {
+    db.prepare(`
+      UPDATE workspace_roles SET
+        name = @name, description = @description, can_manage_accounts = @can_manage_accounts,
+        can_create_plans = @can_create_plans, can_edit_plans = @can_edit_plans,
+        can_delete_plans = @can_delete_plans, can_manage_workflow = @can_manage_workflow,
+        can_review_plans = @can_review_plans, can_manage_libraries = @can_manage_libraries,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = @id
+    `).run({ id, ...role });
+    return normalizeWorkspaceRole(db.prepare("SELECT * FROM workspace_roles WHERE id = ?").get(id));
+  } catch (error) {
+    if (error.code === "SQLITE_CONSTRAINT_UNIQUE") throw new Error("That role name already exists");
+    throw error;
+  }
+}
+
+export function deleteWorkspaceRole(id) {
+  const role = db.prepare("SELECT * FROM workspace_roles WHERE id = ?").get(id);
+  if (!role) throw new Error("Role not found");
+  if (role.protected) throw new Error("Built-in roles cannot be deleted");
+  const users = db.prepare("SELECT COUNT(*) AS count FROM users WHERE role_id = ?").get(id).count;
+  if (users) throw new Error("Move users to another role before deleting this role");
+  db.prepare("DELETE FROM workspace_roles WHERE id = ?").run(id);
+}
 
 function seedDatabase() {
   const projectCount = db.prepare("SELECT COUNT(*) AS count FROM projects").get().count;
@@ -402,12 +608,22 @@ export function getPlan(id) {
   const generations = listGenerations(id);
   const resources = listResources(id);
   const selectedGeneration = generations.find((generation) => generation.id === plan.selected_generation_id) || null;
+  const approval = db.prepare(`
+    SELECT pa.*, u.display_name AS approved_by_name, u.username AS approved_by_username,
+           g.label AS generation_label
+    FROM plan_approvals pa
+    LEFT JOIN users u ON u.id = pa.approved_by
+    LEFT JOIN generations g ON g.id = pa.generation_id
+    WHERE pa.plan_id = ?
+    ORDER BY pa.approved_at DESC, pa.id DESC LIMIT 1
+  `).get(id) || null;
   return {
     ...normalizePlan(plan),
     generated_at: generations[0]?.created_at || null,
     sort_at: generations[0]?.created_at || plan.created_at,
     generations,
     selected_generation: selectedGeneration,
+    approval,
     generation_count: generations.length,
     resources,
     resource_count: resources.length,
@@ -717,8 +933,51 @@ export function selectGeneration(planId, generationId) {
   if (!plan) throw new Error("Shot not found");
   const generation = db.prepare("SELECT id FROM generations WHERE id = ? AND plan_id = ?").get(generationId, planId);
   if (!generation) throw new Error("Generation does not belong to this shot");
-  db.prepare("UPDATE ai_plans SET selected_generation_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(generationId, planId);
+  db.prepare(`
+    UPDATE ai_plans SET selected_generation_id = ?,
+      status = CASE WHEN status IN ('Approved', 'Delivered') THEN 'Review' ELSE status END,
+      updated_at = CURRENT_TIMESTAMP WHERE id = ?
+  `).run(generationId, planId);
   return getPlan(planId);
+}
+
+export function approvePlan(planId, userId) {
+  const plan = db.prepare("SELECT * FROM ai_plans WHERE id = ?").get(planId);
+  if (!plan) throw new Error("Plan not found");
+  if (!plan.selected_generation_id) throw new Error("Select a current final generation before approval");
+  db.transaction(() => {
+    db.prepare("INSERT INTO plan_approvals (plan_id, generation_id, approved_by) VALUES (?, ?, ?)")
+      .run(planId, plan.selected_generation_id, userId);
+    db.prepare("UPDATE ai_plans SET status = 'Approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(planId);
+  })();
+  return getPlan(planId);
+}
+
+export function deleteGeneration(id) {
+  const generation = db.prepare("SELECT * FROM generations WHERE id = ?").get(id);
+  if (!generation) throw new Error("Generation not found");
+  db.transaction(() => {
+    const plan = db.prepare("SELECT selected_generation_id, status FROM ai_plans WHERE id = ?").get(generation.plan_id);
+    db.prepare("DELETE FROM generations WHERE id = ?").run(id);
+    db.prepare(`
+      UPDATE ai_plans SET
+        selected_generation_id = CASE WHEN selected_generation_id = ? THEN NULL ELSE selected_generation_id END,
+        status = CASE WHEN selected_generation_id = ? AND status IN ('Approved', 'Delivered') THEN 'Review' ELSE status END,
+        experiments_count = (SELECT COUNT(*) FROM generations WHERE plan_id = ?),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(id, id, generation.plan_id, generation.plan_id);
+    if (!plan) throw new Error("Plan not found");
+  })();
+  return generation.plan_id;
+}
+
+export function deletePlan(id) {
+  const plan = db.prepare("SELECT id FROM ai_plans WHERE id = ?").get(id);
+  if (!plan) throw new Error("Plan not found");
+  const storageKeys = db.prepare("SELECT storage_key FROM resources WHERE plan_id = ?").all(id).map((item) => item.storage_key);
+  db.prepare("DELETE FROM ai_plans WHERE id = ?").run(id);
+  return storageKeys;
 }
 
 export function createResource(input) {
@@ -758,6 +1017,141 @@ export function deleteResourceRecord(id) {
     if (deleted) db.prepare("UPDATE ai_plans SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(current.plan_id);
     return deleted;
   })();
+}
+
+function normalizeTags(row) {
+  return { ...row, tags: String(row.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean) };
+}
+
+function promptAssetRows(promptId) {
+  return db.prepare(`
+    SELECT pa.*, u.display_name AS uploaded_by_name
+    FROM prompt_assets pa LEFT JOIN users u ON u.id = pa.uploaded_by
+    WHERE pa.prompt_id = ? ORDER BY pa.created_at DESC, pa.id DESC
+  `).all(promptId);
+}
+
+export function listPrompts() {
+  return db.prepare(`
+    SELECT p.*, u.display_name AS created_by_name,
+      (SELECT COUNT(*) FROM prompt_assets pa WHERE pa.prompt_id = p.id) AS asset_count
+    FROM prompt_library p LEFT JOIN users u ON u.id = p.created_by
+    ORDER BY p.updated_at DESC, p.id DESC
+  `).all().map((prompt) => ({ ...normalizeTags(prompt), assets: promptAssetRows(prompt.id) }));
+}
+
+export function getPrompt(id) {
+  const prompt = db.prepare(`
+    SELECT p.*, u.display_name AS created_by_name
+    FROM prompt_library p LEFT JOIN users u ON u.id = p.created_by WHERE p.id = ?
+  `).get(id);
+  return prompt ? { ...normalizeTags(prompt), assets: promptAssetRows(id) } : null;
+}
+
+export function createPrompt(input, createdBy) {
+  const title = String(input.title || "").trim().slice(0, 160);
+  const prompt = String(input.prompt || "").trim().slice(0, 30000);
+  if (!title || !prompt) throw new Error("Title and prompt are required");
+  const result = db.prepare(`
+    INSERT INTO prompt_library (title, prompt, negative_prompt, tags, created_by)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(title, prompt, String(input.negative_prompt || "").trim().slice(0, 15000), String(input.tags || "").trim().slice(0, 1000), createdBy);
+  return getPrompt(Number(result.lastInsertRowid));
+}
+
+export function updatePrompt(id, input) {
+  const current = getPrompt(id);
+  if (!current) throw new Error("Prompt not found");
+  const title = String(input.title ?? current.title).trim().slice(0, 160);
+  const prompt = String(input.prompt ?? current.prompt).trim().slice(0, 30000);
+  if (!title || !prompt) throw new Error("Title and prompt are required");
+  const tags = Array.isArray(input.tags) ? input.tags.join(",") : String(input.tags ?? current.tags.join(","));
+  db.prepare(`
+    UPDATE prompt_library SET title = ?, prompt = ?, negative_prompt = ?, tags = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(title, prompt, String(input.negative_prompt ?? current.negative_prompt).trim().slice(0, 15000), tags.trim().slice(0, 1000), id);
+  return getPrompt(id);
+}
+
+export function createPromptAsset(input) {
+  const result = db.prepare(`
+    INSERT INTO prompt_assets (
+      prompt_id, uploaded_by, original_name, storage_key, mime_type, kind, size_bytes, checksum_sha256
+    ) VALUES (@promptId, @uploadedBy, @originalName, @storageKey, @mimeType, @kind, @sizeBytes, @checksumSha256)
+  `).run(input);
+  db.prepare("UPDATE prompt_library SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(input.promptId);
+  return db.prepare("SELECT * FROM prompt_assets WHERE id = ?").get(Number(result.lastInsertRowid));
+}
+
+export function getPromptAsset(id) {
+  return db.prepare("SELECT * FROM prompt_assets WHERE id = ?").get(id);
+}
+
+export function deletePromptAsset(id) {
+  const asset = getPromptAsset(id);
+  if (!asset) throw new Error("Prompt asset not found");
+  db.prepare("DELETE FROM prompt_assets WHERE id = ?").run(id);
+  return asset;
+}
+
+export function deletePrompt(id) {
+  const prompt = getPrompt(id);
+  if (!prompt) throw new Error("Prompt not found");
+  const storageKeys = prompt.assets.map((asset) => asset.storage_key);
+  db.prepare("DELETE FROM prompt_library WHERE id = ?").run(id);
+  return storageKeys;
+}
+
+export function listLibraryAssets() {
+  return db.prepare(`
+    SELECT a.*, u.display_name AS uploaded_by_name
+    FROM asset_library a LEFT JOIN users u ON u.id = a.uploaded_by
+    ORDER BY a.created_at DESC, a.id DESC
+  `).all().map(normalizeTags);
+}
+
+export function getLibraryAsset(id) {
+  const asset = db.prepare(`
+    SELECT a.*, u.display_name AS uploaded_by_name
+    FROM asset_library a LEFT JOIN users u ON u.id = a.uploaded_by WHERE a.id = ?
+  `).get(id);
+  return asset ? normalizeTags(asset) : null;
+}
+
+export function createLibraryAsset(input) {
+  const title = String(input.title || input.originalName || "").trim().slice(0, 160);
+  if (!title) throw new Error("Asset title is required");
+  const result = db.prepare(`
+    INSERT INTO asset_library (
+      title, description, category, tags, uploaded_by, original_name, storage_key,
+      mime_type, kind, size_bytes, checksum_sha256
+    ) VALUES (
+      @title, @description, @category, @tags, @uploadedBy, @originalName, @storageKey,
+      @mimeType, @kind, @sizeBytes, @checksumSha256
+    )
+  `).run({ ...input, title });
+  return getLibraryAsset(Number(result.lastInsertRowid));
+}
+
+export function updateLibraryAsset(id, input) {
+  const current = getLibraryAsset(id);
+  if (!current) throw new Error("Asset not found");
+  const title = String(input.title ?? current.title).trim().slice(0, 160);
+  if (!title) throw new Error("Asset title is required");
+  const tags = Array.isArray(input.tags) ? input.tags.join(",") : String(input.tags ?? current.tags.join(","));
+  db.prepare(`
+    UPDATE asset_library SET title = ?, description = ?, category = ?, tags = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(title, String(input.description ?? current.description).trim().slice(0, 3000),
+    String(input.category ?? current.category).trim().slice(0, 80), tags.trim().slice(0, 1000), id);
+  return getLibraryAsset(id);
+}
+
+export function deleteLibraryAsset(id) {
+  const asset = getLibraryAsset(id);
+  if (!asset) throw new Error("Asset not found");
+  db.prepare("DELETE FROM asset_library WHERE id = ?").run(id);
+  return asset;
 }
 
 const allowedStatuses = new Set(["Idea", "Brief Ready", "Generating", "Review", "Revision", "Approved", "Delivered"]);
@@ -831,7 +1225,13 @@ export function updatePlan(id, input) {
 }
 
 export function findUserByUsername(username) {
-  return db.prepare("SELECT * FROM users WHERE username = ? COLLATE NOCASE").get(username);
+  return hydrateUser(db.prepare("SELECT * FROM users WHERE username = ? COLLATE NOCASE").get(username));
+}
+
+function hydrateUser(user) {
+  if (!user) return null;
+  const role = user.role_id ? db.prepare("SELECT name FROM workspace_roles WHERE id = ?").get(user.role_id) : null;
+  return { ...user, role: role?.name || user.role };
 }
 
 export function setUserPassword(id, passwordHash) {
@@ -841,7 +1241,7 @@ export function setUserPassword(id, passwordHash) {
     WHERE id = ? AND must_set_password = 1 AND password_hash IS NULL AND active = 1
   `).run(passwordHash, id);
   if (!result.changes) throw new Error("This account cannot be activated");
-  return db.prepare("SELECT * FROM users WHERE id = ?").get(id);
+  return hydrateUser(db.prepare("SELECT * FROM users WHERE id = ?").get(id));
 }
 
 export function markUserLogin(id) {
@@ -854,12 +1254,12 @@ export function saveSession(tokenHash, userId, expiresAt) {
 }
 
 export function getUserBySessionHash(tokenHash) {
-  return db.prepare(`
+  return hydrateUser(db.prepare(`
     SELECT u.*
     FROM sessions s
     JOIN users u ON u.id = s.user_id
     WHERE s.token_hash = ? AND s.expires_at > ? AND u.active = 1
-  `).get(tokenHash, new Date().toISOString());
+  `).get(tokenHash, new Date().toISOString()));
 }
 
 export function deleteSession(tokenHash) {
@@ -868,26 +1268,27 @@ export function deleteSession(tokenHash) {
 
 export function listAccounts() {
   return db.prepare(`
-    SELECT u.id, u.username, u.display_name, u.role, u.must_set_password, u.active,
+    SELECT u.id, u.username, u.display_name, COALESCE(wr.name, u.role) AS role, u.must_set_password, u.active,
            u.last_login_at, u.created_at, creator.username AS created_by_username
     FROM users u
+    LEFT JOIN workspace_roles wr ON wr.id = u.role_id
     LEFT JOIN users creator ON creator.id = u.created_by
     ORDER BY u.active DESC,
-      CASE u.role WHEN 'Admin' THEN 1 WHEN 'Supervisor' THEN 2 WHEN 'Creator' THEN 3 WHEN 'Reviewer' THEN 4 ELSE 5 END,
+      CASE COALESCE(wr.name, u.role) WHEN 'Admin' THEN 1 WHEN 'Supervisor' THEN 2 WHEN 'Generator' THEN 3 ELSE 4 END,
       u.display_name COLLATE NOCASE
   `).all();
 }
 
 export function createAccount({ username, displayName, role, createdBy }) {
+  const roleRow = roleRowByName(role);
+  if (!roleRow) throw new Error("Invalid role");
+  const legacyRole = ["Admin", "Supervisor", "Creator", "Reviewer", "Viewer"].includes(roleRow.name) ? roleRow.name : "Viewer";
   try {
     const result = db.prepare(`
-      INSERT INTO users (username, display_name, role, password_hash, must_set_password, active, created_by)
-      VALUES (?, ?, ?, NULL, 1, 1, ?)
-    `).run(username, displayName, role, createdBy);
-    return db.prepare(`
-      SELECT id, username, display_name, role, must_set_password, active, last_login_at, created_at
-      FROM users WHERE id = ?
-    `).get(Number(result.lastInsertRowid));
+      INSERT INTO users (username, display_name, role, role_id, password_hash, must_set_password, active, created_by)
+      VALUES (?, ?, ?, ?, NULL, 1, 1, ?)
+    `).run(username, displayName, legacyRole, roleRow.id, createdBy);
+    return listAccounts().find((user) => user.id === Number(result.lastInsertRowid));
   } catch (error) {
     if (error.code === "SQLITE_CONSTRAINT_UNIQUE") throw new Error("That username is already in use");
     throw error;
@@ -895,23 +1296,24 @@ export function createAccount({ username, displayName, role, createdBy }) {
 }
 
 export function updateAccount(id, { role, active }) {
-  const current = db.prepare("SELECT * FROM users WHERE id = ?").get(id);
+  const current = hydrateUser(db.prepare("SELECT * FROM users WHERE id = ?").get(id));
   if (!current) throw new Error("Account not found");
   const nextRole = role ?? current.role;
+  const nextRoleRow = roleRowByName(nextRole);
+  if (!nextRoleRow) throw new Error("Invalid role");
   const nextActive = active === undefined ? current.active : Number(Boolean(active));
 
   if (current.role === "Admin" && current.active && (nextRole !== "Admin" || !nextActive)) {
-    const adminCount = db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'Admin' AND active = 1").get().count;
+    const adminRole = roleRowByName("Admin");
+    const adminCount = db.prepare("SELECT COUNT(*) AS count FROM users WHERE role_id = ? AND active = 1").get(adminRole.id).count;
     if (adminCount <= 1) throw new Error("AI Hub must keep at least one active Admin");
   }
 
+  const legacyRole = ["Admin", "Supervisor", "Creator", "Reviewer", "Viewer"].includes(nextRoleRow.name) ? nextRoleRow.name : "Viewer";
   db.prepare(`
-    UPDATE users SET role = ?, active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-  `).run(nextRole, nextActive, id);
+    UPDATE users SET role = ?, role_id = ?, active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+  `).run(legacyRole, nextRoleRow.id, nextActive, id);
   if (!nextActive) db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
 
-  return db.prepare(`
-    SELECT id, username, display_name, role, must_set_password, active, last_login_at, created_at
-    FROM users WHERE id = ?
-  `).get(id);
+  return listAccounts().find((user) => user.id === id);
 }

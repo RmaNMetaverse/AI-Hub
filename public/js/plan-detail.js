@@ -67,7 +67,6 @@ document.querySelectorAll(".shot-tab").forEach((button) => button.addEventListen
 document.querySelectorAll("[data-open-tab]").forEach((button) => button.addEventListener("click", () => activateTab(button.dataset.openTab)));
 
 async function updateStatus(status) {
-  if (status === "Approved" && !plan.selected_generation_id) return showToast("Select a current final generation before approval");
   const response = await fetch(`/api/plans/${plan.id}/status`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -79,8 +78,16 @@ async function updateStatus(status) {
   setTimeout(() => window.location.reload(), 450);
 }
 
+async function approveShot() {
+  const response = await fetch(`/api/plans/${plan.id}/approval`, { method: "POST" });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) return showToast(payload.error || "Could not approve this shot");
+  showToast("Selected generation approved");
+  setTimeout(() => window.location.reload(), 450);
+}
+
 document.querySelector("#shotStatusSelect")?.addEventListener("change", (event) => updateStatus(event.target.value));
-document.querySelector("#approveShotButton")?.addEventListener("click", () => updateStatus("Approved"));
+document.querySelector("#approveShotButton")?.addEventListener("click", approveShot);
 document.querySelector("#copyPromptButton")?.addEventListener("click", async () => {
   await navigator.clipboard.writeText(plan.prompt || "");
   showToast("Prompt copied");
@@ -99,6 +106,15 @@ document.addEventListener("click", (event) => {
 document.querySelector("#shotLogoutButton")?.addEventListener("click", async () => {
   await fetch("/auth/logout", { method: "POST" });
   window.location.assign("/login");
+});
+document.querySelector("#deleteShotButton")?.addEventListener("click", async () => {
+  if (!window.confirm(`Delete #Seq ${plan.sequence_number} / #Shot ${plan.shot_number}, including all generations and files? This cannot be undone.`)) return;
+  const response = await fetch(`/api/plans/${plan.id}`, { method: "DELETE" });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    return showToast(payload.error || "Could not delete shot");
+  }
+  window.location.assign("/");
 });
 
 function openModal(modal) {
@@ -194,6 +210,15 @@ async function selectGeneration(id) {
 
 document.querySelectorAll(".select-generation-button").forEach((button) => button.addEventListener("click", () => selectGeneration(button.dataset.generationId)));
 document.querySelector("#selectGenerationButton")?.addEventListener("click", () => selectGeneration(activeGenerationId));
+document.querySelector("#deleteGenerationButton")?.addEventListener("click", async () => {
+  const generation = generationById(activeGenerationId);
+  if (!generation || !window.confirm(`Delete ${generation.version_label}? Linked files will remain in the shot library.`)) return;
+  const response = await fetch(`/api/generations/${generation.id}`, { method: "DELETE" });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) return showToast(payload.error || "Could not delete generation");
+  showToast("Generation deleted");
+  setTimeout(() => window.location.reload(), 400);
+});
 document.querySelectorAll(".generation-modal-close").forEach((button) => button.addEventListener("click", () => closeModal(generationModal)));
 generationModal?.addEventListener("click", (event) => { if (event.target === generationModal) closeModal(generationModal); });
 

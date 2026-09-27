@@ -52,19 +52,22 @@ export function safeOriginalName(value) {
   return (name || "resource").slice(0, 255);
 }
 
-const diskStorage = multer.diskStorage({
-  destination(request, _file, callback) {
-    const destination = path.join(mediaRoot, "plans", String(Number(request.params.id)));
-    fs.mkdirSync(destination, { recursive: true });
-    callback(null, destination);
-  },
-  filename(_request, file, callback) {
-    callback(null, `${crypto.randomUUID()}${normalizedExtension(file.originalname)}`);
-  }
-});
+function uploadStorage(folder) {
+  return multer.diskStorage({
+    destination(request, _file, callback) {
+      const itemFolder = folder === "asset-library" ? "" : String(Number(request.params.id));
+      const destination = path.join(mediaRoot, folder, itemFolder);
+      fs.mkdirSync(destination, { recursive: true });
+      callback(null, destination);
+    },
+    filename(_request, file, callback) {
+      callback(null, `${crypto.randomUUID()}${normalizedExtension(file.originalname)}`);
+    }
+  });
+}
 
 export const uploadResourceFile = multer({
-  storage: diskStorage,
+  storage: uploadStorage("plans"),
   limits: {
     fileSize: maxUploadBytes,
     files: 1,
@@ -74,6 +77,28 @@ export const uploadResourceFile = multer({
     fieldSize: 8 * 1024,
     headerPairs: 100
   },
+  defParamCharset: "utf8"
+}).single("file");
+
+const libraryLimits = {
+  fileSize: maxUploadBytes,
+  files: 1,
+  fields: 6,
+  parts: 7,
+  fieldNameSize: 80,
+  fieldSize: 32 * 1024,
+  headerPairs: 100
+};
+
+export const uploadPromptAssetFile = multer({
+  storage: uploadStorage("prompt-library"),
+  limits: libraryLimits,
+  defParamCharset: "utf8"
+}).single("file");
+
+export const uploadAssetLibraryFile = multer({
+  storage: uploadStorage("asset-library"),
+  limits: libraryLimits,
   defParamCharset: "utf8"
 }).single("file");
 

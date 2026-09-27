@@ -5,6 +5,7 @@ const state = {
   currentUser: window.__AI_HUB_CURRENT_USER__ || null,
   permissions: window.__AI_HUB_PERMISSIONS__ || {},
   roleDefinitions: window.__AI_HUB_ROLES__ || {},
+  workspaceRoles: window.__AI_HUB_WORKSPACE_ROLES__ || [],
   generationCatalogs: window.__AI_HUB_GENERATION_CATALOGS__ || { models: [], platforms: [], resource_roles: [] },
   query: "",
   status: "all"
@@ -60,7 +61,8 @@ function generationDate(value) {
 function shotCard(plan) {
   const query = window.shotNavigation.query();
   return `
-    <a href="/plans/${plan.id}${query ? `?${query}` : ""}" class="plan-card group block" data-plan-id="${plan.id}">
+    <article class="plan-card group relative" data-plan-id="${plan.id}">
+      <a href="/plans/${plan.id}${query ? `?${query}` : ""}" class="block">
       <div class="media-frame relative aspect-video overflow-hidden" style="--image-position:${escapeHtml(plan.image_position || "0% 0%")}">
         <span class="status-pill absolute left-3 top-3 ${statusClass(plan.status)} backdrop-blur-xl">${escapeHtml(plan.status)}</span>
         ${plan.issue ? `<div class="absolute inset-x-3 bottom-3 rounded-lg bg-black/70 p-2 text-xs text-orange-200">${escapeHtml(plan.issue)}</div>` : ""}
@@ -72,7 +74,9 @@ function shotCard(plan) {
         <div class="mt-4 flex items-center justify-between gap-2 border-t border-white/[0.07] pt-3 text-xs text-zinc-500"><span class="truncate">${escapeHtml(plan.model)}</span><span class="shrink-0">${plan.generation_count} generations</span></div>
         <div class="mt-2 text-[11px] text-zinc-600">${plan.generated_at ? "Generated" : "Created"} ${escapeHtml(generationDate(plan.sort_at))}</div>
       </div>
-    </a>`;
+      </a>
+      ${state.permissions.canDeletePlans ? `<button class="delete-plan-card icon-button absolute right-3 top-3 z-10 border-red-300/10 bg-black/70 text-red-300/70 hover:text-red-200" aria-label="Delete ${escapeHtml(plan.title)}" title="Delete shot"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ""}
+    </article>`;
 }
 
 function renderStats() {
@@ -102,6 +106,21 @@ function render() {
   els.grid.innerHTML = plans.map(shotCard).join("");
   els.count.textContent = `${plans.length} of ${state.plans.length} shots`;
   els.empty.classList.toggle("hidden", plans.length > 0);
+  els.grid.querySelectorAll(".delete-plan-card").forEach((button) => button.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const id = Number(button.closest("[data-plan-id]").dataset.planId);
+    const plan = state.plans.find((item) => item.id === id);
+    if (!window.confirm(`Delete #Seq ${plan.sequence_number} / #Shot ${plan.shot_number} and all of its generations and files? This cannot be undone.`)) return;
+    const response = await fetch(`/api/plans/${id}`, { method: "DELETE" });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      return showToast(payload.error || "Could not delete shot");
+    }
+    state.plans = state.plans.filter((item) => item.id !== id);
+    render();
+    showToast("Shot deleted");
+  }));
   lucide.createIcons();
 }
 
@@ -201,7 +220,20 @@ async function loadUsers() {
   const payload = await response.json();
   if (!response.ok) return showToast(payload.error || "Could not load accounts");
   accountUsers = payload.users;
+  state.workspaceRoles = payload.roles;
+  state.roleDefinitions = Object.fromEntries(payload.roles.map((role) => [role.name, role.description]));
+  refreshRoleSelect();
   renderUsers();
+  renderRoles();
+}
+
+function refreshRoleSelect() {
+  const select = document.querySelector("#newUserForm [name='role']");
+  if (!select) return;
+  const current = select.value || "Generator";
+  select.innerHTML = state.workspaceRoles.map((role) => `<option ${role.name === current ? "selected" : ""}>${escapeHtml(role.name)}</option>`).join("");
+  if (![...select.options].some((option) => option.selected)) select.value = "Generator";
+  updateRoleDescription();
 }
 
 function renderUsers() {
@@ -214,7 +246,7 @@ function renderUsers() {
         <div class="min-w-0 flex-1"><div class="flex items-center gap-2"><span class="truncate text-sm font-semibold text-zinc-200">${escapeHtml(user.display_name)}</span>${user.must_set_password ? `<span class="shrink-0 rounded-full border border-amber-300/15 bg-amber-300/[0.07] px-2 py-0.5 text-[8px] font-semibold uppercase tracking-wider text-amber-300">Awaiting setup</span>` : ""}</div><div class="mt-1 text-[10px] text-zinc-600">@${escapeHtml(user.username)} · ${formatLastLogin(user.last_login_at)}</div></div>
       </div>
       <div class="mt-3 flex items-center gap-2 border-t border-white/[0.06] pt-3">
-        <select class="user-role h-8 flex-1 rounded-lg border border-white/[0.08] bg-black/20 px-2 text-[11px] text-zinc-400 outline-none" aria-label="Role for ${escapeHtml(user.display_name)}">${Object.keys(state.roleDefinitions).map((role) => `<option ${role === user.role ? "selected" : ""}>${role}</option>`).join("")}</select>
+        <select class="user-role h-8 flex-1 rounded-lg border border-white/[0.08] bg-black/20 px-2 text-[11px] text-zinc-400 outline-none" aria-label="Role for ${escapeHtml(user.display_name)}">${state.workspaceRoles.map((role) => `<option ${role.name === user.role ? "selected" : ""}>${escapeHtml(role.name)}</option>`).join("")}</select>
         <button class="toggle-user h-8 rounded-lg border border-white/[0.08] px-3 text-[10px] font-semibold ${user.active ? "text-zinc-500 hover:text-red-300" : "text-acid"}">${user.active ? "Disable" : "Enable"}</button>
       </div>
     </article>`).join("");
@@ -228,6 +260,59 @@ function renderUsers() {
     const user = accountUsers.find((item) => item.id === id);
     await updateUserAccount(id, { active: !user.active });
   }));
+}
+
+const rolePermissionFields = [
+  ["can_create_plans", "Create shots"], ["can_edit_plans", "Edit generations"],
+  ["can_delete_plans", "Delete shots"], ["can_manage_workflow", "Change workflow"],
+  ["can_review_plans", "Review shots"], ["can_manage_libraries", "Manage libraries"],
+  ["can_manage_accounts", "Manage accounts"]
+];
+
+function renderRoles() {
+  const list = document.querySelector("#rolesList");
+  if (!list) return;
+  document.querySelector("#roleCount").textContent = `${state.workspaceRoles.length} roles`;
+  list.innerHTML = state.workspaceRoles.map((role) => `
+    <article class="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-3.5" data-role-id="${role.id}">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2"><input class="role-name bg-transparent text-sm font-semibold text-zinc-200 outline-none" value="${escapeHtml(role.name)}" maxlength="40" ${role.protected ? "disabled" : ""} />${role.protected ? `<span class="rounded-full border border-acid/15 px-2 py-0.5 text-[8px] uppercase tracking-wider text-acid">Built in</span>` : ""}</div>
+          <input class="role-description mt-1 w-full bg-transparent text-[10px] text-zinc-600 outline-none" value="${escapeHtml(role.description || "")}" maxlength="240" ${role.protected ? "disabled" : ""} />
+        </div>
+        <span class="shrink-0 text-[9px] text-zinc-700">${role.user_count} user${role.user_count === 1 ? "" : "s"}</span>
+      </div>
+      <div class="mt-3 flex flex-wrap gap-x-4 gap-y-2 border-t border-white/[0.05] pt-3 text-[9px] text-zinc-500">${rolePermissionFields.map(([field, label]) => `<label class="flex items-center gap-1.5"><input type="checkbox" data-role-permission="${field}" ${role[field] ? "checked" : ""} ${role.protected ? "disabled" : ""} />${label}</label>`).join("")}</div>
+      ${role.protected ? "" : `<div class="mt-3 flex justify-end gap-2"><button class="delete-role text-[10px] text-red-300/60 hover:text-red-200">Delete</button><button class="save-role ghost-button h-8 px-3 text-[10px]">Save role</button></div>`}
+    </article>`).join("");
+  list.querySelectorAll(".save-role").forEach((button) => button.addEventListener("click", () => saveRole(button.closest("[data-role-id]"))));
+  list.querySelectorAll(".delete-role").forEach((button) => button.addEventListener("click", () => removeRole(button.closest("[data-role-id]"))));
+}
+
+function roleBodyFromElement(element) {
+  const body = { name: element.querySelector(".role-name").value.trim(), description: element.querySelector(".role-description").value.trim() };
+  rolePermissionFields.forEach(([field]) => { body[field] = element.querySelector(`[data-role-permission='${field}']`).checked; });
+  return body;
+}
+
+async function saveRole(element) {
+  const response = await fetch(`/api/roles/${element.dataset.roleId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(roleBodyFromElement(element)) });
+  const payload = await response.json();
+  if (!response.ok) return showToast(payload.error || "Could not update role");
+  showToast("Role updated");
+  await loadUsers();
+}
+
+async function removeRole(element) {
+  const role = state.workspaceRoles.find((item) => item.id === Number(element.dataset.roleId));
+  if (!window.confirm(`Delete the ${role.name} role?`)) return;
+  const response = await fetch(`/api/roles/${role.id}`, { method: "DELETE" });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    return showToast(payload.error || "Could not delete role");
+  }
+  showToast("Role deleted");
+  await loadUsers();
 }
 
 async function updateUserAccount(id, changes) {
@@ -285,6 +370,20 @@ document.querySelector("#newUserForm")?.addEventListener("submit", async (event)
   form.reset();
   updateRoleDescription();
   showToast(`@${payload.username} can now set their password`);
+  await loadUsers();
+});
+
+document.querySelector("#newRoleForm")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = new FormData(form);
+  const body = { name: data.get("name"), description: data.get("description") };
+  rolePermissionFields.forEach(([field]) => { body[field] = data.has(field); });
+  const response = await fetch("/api/roles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const payload = await response.json();
+  if (!response.ok) return showToast(payload.error || "Could not create role");
+  form.reset();
+  showToast("Custom role created");
   await loadUsers();
 });
 
