@@ -57,7 +57,7 @@
   }
 
   .media-frame {
-    background-image: linear-gradient(180deg, transparent 55%, rgba(0,0,0,.2)), url('/storage/thumbnails/cinematic-frames');
+    background-image: linear-gradient(180deg, transparent 55%, rgba(0,0,0,.2)), var(--cinematic-thumbnail, url('../storage/thumbnails/cinematic-frames'));
     background-size: 300% auto;
     background-position: var(--image-position, 0% 0%);
     background-repeat: no-repeat;

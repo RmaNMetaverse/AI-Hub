@@ -62,4 +62,5 @@ test("AI Hub handles BASE_PATH=/AIHub properly", async () => {
   assert.ok(html.includes('src="/AIHub/vendor/lucide/lucide.js"'), "Lucide vendor script should be prefixed with /AIHub");
   assert.ok(html.includes('src="/AIHub/js/auth.js"'), "Auth script should be prefixed with /AIHub");
   assert.ok(html.includes('window.__AI_HUB_BASE__ = "/AIHub"'), "window.__AI_HUB_BASE__ should be set to /AIHub");
+  assert.ok(html.includes('--cinematic-thumbnail: url("/AIHub/storage/thumbnails/cinematic-frames")'), "CSS custom property for thumbnail should be set");
 });
