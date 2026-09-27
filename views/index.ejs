@@ -6,7 +6,8 @@
     <meta name="theme-color" content="#08090a" />
     <meta name="description" content="AI Hub — cinematic AI media planning and review workspace" />
     <title>AI Hub · <%= project.title %></title>
-    <link rel="stylesheet" href="/css/app.css" />
+    <link rel="stylesheet" href="<%= basePath %>/css/app.css" />
+    <%- include('partials/base-head') %>
   </head>
   <body class="overflow-x-hidden">
     <div class="min-h-screen bg-[radial-gradient(circle_at_70%_-20%,rgba(214,255,69,0.06),transparent_32%)]">
@@ -20,9 +21,9 @@
         </div>
 
         <nav class="mt-6 space-y-1" aria-label="Main navigation">
-          <a href="/" class="nav-item active" aria-current="page"><i data-lucide="layout-grid" class="h-[17px] w-[17px]"></i>Production</a>
-          <a href="/prompt-library" class="nav-item"><i data-lucide="book-open" class="h-[17px] w-[17px]"></i>Prompt Library</a>
-          <a href="/asset-library" class="nav-item"><i data-lucide="library" class="h-[17px] w-[17px]"></i>Asset Library</a>
+          <a href="<%= basePath %>/" class="nav-item active" aria-current="page"><i data-lucide="layout-grid" class="h-[17px] w-[17px]"></i>Production</a>
+          <a href="<%= basePath %>/prompt-library" class="nav-item"><i data-lucide="book-open" class="h-[17px] w-[17px]"></i>Prompt Library</a>
+          <a href="<%= basePath %>/asset-library" class="nav-item"><i data-lucide="library" class="h-[17px] w-[17px]"></i>Asset Library</a>
         </nav>
 
         <div class="mt-7 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-700">Workspace</div>
@@ -185,8 +186,8 @@
       window.__AI_HUB_WORKSPACE_ROLES__ = <%- JSON.stringify(workspaceRoles).replaceAll('<', '\\u003c') %>;
       window.__AI_HUB_GENERATION_CATALOGS__ = <%- JSON.stringify(generationCatalogs).replaceAll('<', '\\u003c') %>;
     </script>
-    <script src="/vendor/lucide/lucide.js"></script>
-    <script src="/js/shot-navigation.js" defer></script>
-    <script src="/js/app.js" defer></script>
+    <script src="<%= basePath %>/vendor/lucide/lucide.js"></script>
+    <script src="<%= basePath %>/js/shot-navigation.js" defer></script>
+    <script src="<%= basePath %>/js/app.js" defer></script>
   </body>
 </html>

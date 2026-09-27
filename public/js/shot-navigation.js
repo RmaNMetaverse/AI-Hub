@@ -32,10 +32,11 @@
       count.className = "text-xs text-zinc-400";
       count.textContent = form.checkValidity() ? `${plans.length} matching shot${plans.length === 1 ? "" : "s"}` : "Enter whole numbers from 1 to 1,000,000.";
       results.append(count);
+      const base = window.__AI_HUB_BASE__ || "";
       for (const plan of plans.slice(0, 6)) {
         const link = document.createElement("a");
         const query = params().toString();
-        link.href = `/plans/${plan.id}${query ? `?${query}` : ""}`;
+        link.href = `${base}/plans/${plan.id}${query ? `?${query}` : ""}`;
         link.className = "mr-3 mt-2 inline-block rounded-lg border border-white/10 px-3 py-2 text-xs text-acid hover:bg-white/5";
         link.textContent = `#Seq ${plan.sequence_number} · #Shot ${plan.shot_number} · ${plan.title}`;
         results.append(link);
@@ -53,7 +54,7 @@
         if (!link) continue;
         link.classList.toggle("hidden", !target);
         const query = params().toString();
-        if (target) link.href = `/plans/${target.id}${query ? `?${query}` : ""}`;
+        if (target) link.href = `${base}/plans/${target.id}${query ? `?${query}` : ""}`;
       }
     }
     document.dispatchEvent(new CustomEvent("shotfilterschange"));

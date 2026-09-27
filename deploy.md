@@ -93,7 +93,7 @@ ssh -L 4311:127.0.0.1:4310 your-user@your-server
 
 While that SSH session is open, visit [http://localhost:4311](http://localhost:4311), sign in as `admin`, and set the password.
 
-### Configure Nginx
+### Configure Nginx for a dedicated domain
 
 Create `/etc/nginx/sites-available/ai-hub`:
 
@@ -139,6 +139,75 @@ sudo certbot --nginx -d ai.example.com --redirect
 ```
 
 Use the HTTPS address for normal sign-in and uploads.
+
+### Configure Nginx for a subpath (e.g. `<serverIp>/AIHub`)
+
+If your server already hosts other web applications on port 80 (e.g. ComfyFleet at `/`, KareMa at `/KareMa/`, VideoCompareMa at `/VideoCompareMa/`) and you want to access AI Hub under `<serverIp>/AIHub`:
+
+1. **Set `BASE_PATH` in `.env`**:
+   In `/opt/ai-hub/.env`, add:
+   ```env
+   BASE_PATH=/AIHub
+   ```
+   Restart the container so the app mounts its routes and assets under `/AIHub`:
+   ```bash
+   docker compose up --build -d app
+   ```
+
+2. **Create the Nginx snippet `/etc/nginx/snippets/aihub.conf`**:
+   ```bash
+   sudo tee /etc/nginx/snippets/aihub.conf <<'EOF'
+   # /etc/nginx/snippets/aihub.conf
+   # Mounts AI Hub under /AIHub/ alongside existing sites.
+
+   location = /AIHub {
+       return 301 /AIHub/;
+   }
+
+   location ^~ /AIHub/ {
+       # No trailing slash on proxy_pass:
+       # the URI is passed untouched because AI Hub is configured with BASE_PATH=/AIHub
+       proxy_pass http://127.0.0.1:4310;
+
+       proxy_http_version 1.1;
+       proxy_set_header Host              $host;
+       proxy_set_header X-Real-IP         $remote_addr;
+       proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+       proxy_set_header X-Forwarded-Proto $scheme;
+       proxy_set_header Connection        "";
+
+       # Allow large media file streaming and uploads
+       client_max_body_size 21g;
+       client_body_timeout 3600s;
+       proxy_request_buffering off;
+       proxy_buffering off;
+       proxy_read_timeout 3600s;
+       proxy_send_timeout 3600s;
+   }
+   EOF
+   ```
+
+3. **Include the snippet in your existing server configuration**:
+   Edit your active server block (e.g. `/etc/nginx/sites-enabled/comfyfleet`) and add the include inside the `server { ... }` block:
+   ```nginx
+   server {
+       listen 80 default_server;
+       listen [::]:80 default_server;
+       server_name _;
+
+       include /etc/nginx/snippets/karema.conf;
+       include /etc/nginx/snippets/videocomparema.conf;
+       include /etc/nginx/snippets/aihub.conf;
+       ...
+   ```
+
+4. **Test and reload Nginx**:
+   ```bash
+   sudo nginx -t
+   sudo systemctl reload nginx
+   ```
+
+You can now open `http://<serverIp>/AIHub` in your browser.
 
 ### Every later run
 

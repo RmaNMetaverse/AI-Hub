@@ -78,7 +78,7 @@ document.querySelector("#passwordForm").addEventListener("submit", async (event)
   setSubmitting(form, true, "Sign in");
   try {
     await send("/auth/login", { username: account.username, password: form.elements.password.value });
-    window.location.assign("/");
+    window.location.assign(window.__AI_HUB_BASE__ ? window.__AI_HUB_BASE__ + "/" : "/");
   } catch (error) {
     showError(error.message);
     setSubmitting(form, false, "Sign in");
@@ -96,7 +96,7 @@ document.querySelector("#setupForm").addEventListener("submit", async (event) =>
       password: form.elements.password.value,
       confirmation: form.elements.confirmation.value
     });
-    window.location.assign("/");
+    window.location.assign(window.__AI_HUB_BASE__ ? window.__AI_HUB_BASE__ + "/" : "/");
   } catch (error) {
     showError(error.message);
     setSubmitting(form, false, "Create password & sign in");

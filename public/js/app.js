@@ -120,7 +120,8 @@ function render() {
 
 function openPlan(id) {
   const query = window.shotNavigation.query();
-  window.location.assign(`/plans/${id}${query ? `?${query}` : ""}`);
+  const base = window.__AI_HUB_BASE__ || "";
+  window.location.assign(`${base}/plans/${id}${query ? `?${query}` : ""}`);
 }
 
 function openModal() {
@@ -197,7 +198,7 @@ document.addEventListener("click", (event) => {
 
 document.querySelector("#logoutButton")?.addEventListener("click", async () => {
   await fetch("/auth/logout", { method: "POST" });
-  window.location.assign("/login");
+  window.location.assign(`${window.__AI_HUB_BASE__ || ""}/login`);
 });
 
 function userInitials(name) {

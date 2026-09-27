@@ -6,7 +6,8 @@
     <meta name="theme-color" content="#08090a" />
     <meta name="description" content="<%= plan.title %> - AI Hub shot workspace" />
     <title><%= plan.shot_code %> - <%= plan.title %> - AI Hub</title>
-    <link rel="stylesheet" href="/css/app.css" />
+    <link rel="stylesheet" href="<%= basePath %>/css/app.css" />
+    <%- include('partials/base-head') %>
   </head>
   <body>
     <% const statusStyles = { WIP: 'border-amber-400/20 bg-amber-400/10 text-amber-300', Approved: 'border-lime-400/20 bg-lime-400/10 text-lime-300' }; %>
@@ -21,26 +22,26 @@
 
     <div class="min-h-screen bg-[radial-gradient(circle_at_55%_-20%,rgba(214,255,69,0.055),transparent_35%)]">
       <header class="sticky top-0 z-40 flex h-[68px] items-center border-b border-white/[0.07] bg-[#08090a]/85 px-4 backdrop-blur-xl sm:px-6 xl:px-8">
-        <a data-shot-navigation href="/<%= filterQuery ? '?' + filterQuery : '' %>" class="flex items-center gap-3" aria-label="AI Hub shot grid">
+        <a data-shot-navigation href="<%= basePath %>/<%= filterQuery ? '?' + filterQuery : '' %>" class="flex items-center gap-3" aria-label="AI Hub shot grid">
           <div class="grid h-8 w-8 place-items-center rounded-xl bg-acid text-sm font-black text-black">A</div>
           <div class="hidden sm:block"><div class="text-sm font-bold tracking-tight">AI Hub</div><div class="text-[8px] uppercase tracking-[0.18em] text-zinc-700">Production OS</div></div>
         </a>
         <div class="mx-4 hidden h-6 w-px bg-white/[0.08] sm:block"></div>
-        <a data-shot-navigation href="/<%= filterQuery ? '?' + filterQuery : '' %>" class="hidden items-center gap-2 text-xs font-medium text-zinc-500 transition hover:text-white sm:flex"><i data-lucide="arrow-left" class="h-4 w-4"></i>Shot grid</a>
+        <a data-shot-navigation href="<%= basePath %>/<%= filterQuery ? '?' + filterQuery : '' %>" class="hidden items-center gap-2 text-xs font-medium text-zinc-500 transition hover:text-white sm:flex"><i data-lucide="arrow-left" class="h-4 w-4"></i>Shot grid</a>
         <div class="ml-auto flex items-center gap-2">
           <div class="hidden items-center rounded-full border border-white/[0.08] bg-white/[0.03] p-1 sm:flex">
-            <a id="previousShot" href="<%= previousPlan ? '/plans/' + previousPlan.id : '#' %><%= previousPlan && filterQuery ? '?' + filterQuery : '' %>" class="icon-button h-8 w-8 border-0 bg-transparent <%= previousPlan ? '' : 'hidden' %>" title="<%= previousPlan ? 'Previous: ' + previousPlan.title : 'Previous shot' %>" aria-label="Previous shot"><i data-lucide="chevron-left" class="h-4 w-4"></i></a>
+            <a id="previousShot" href="<%= previousPlan ? basePath + '/plans/' + previousPlan.id : '#' %><%= previousPlan && filterQuery ? '?' + filterQuery : '' %>" class="icon-button h-8 w-8 border-0 bg-transparent <%= previousPlan ? '' : 'hidden' %>" title="<%= previousPlan ? 'Previous: ' + previousPlan.title : 'Previous shot' %>" aria-label="Previous shot"><i data-lucide="chevron-left" class="h-4 w-4"></i></a>
             <span class="px-2 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-600">Shots</span>
-            <a id="nextShot" href="<%= nextPlan ? '/plans/' + nextPlan.id : '#' %><%= nextPlan && filterQuery ? '?' + filterQuery : '' %>" class="icon-button h-8 w-8 border-0 bg-transparent <%= nextPlan ? '' : 'hidden' %>" title="<%= nextPlan ? 'Next: ' + nextPlan.title : 'Next shot' %>" aria-label="Next shot"><i data-lucide="chevron-right" class="h-4 w-4"></i></a>
+            <a id="nextShot" href="<%= nextPlan ? basePath + '/plans/' + nextPlan.id : '#' %><%= nextPlan && filterQuery ? '?' + filterQuery : '' %>" class="icon-button h-8 w-8 border-0 bg-transparent <%= nextPlan ? '' : 'hidden' %>" title="<%= nextPlan ? 'Next: ' + nextPlan.title : 'Next shot' %>" aria-label="Next shot"><i data-lucide="chevron-right" class="h-4 w-4"></i></a>
           </div>
           <button id="copyShotLink" class="icon-button" aria-label="Copy shot link"><i data-lucide="link" class="h-4 w-4"></i></button>
           <div class="relative">
             <button id="shotAccountButton" class="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-amber-200 to-orange-700 text-xs font-bold text-black" aria-label="Open account menu"><%= userInitials %></button>
             <div id="shotAccountMenu" class="absolute right-0 top-12 hidden w-60 overflow-hidden rounded-2xl border border-white/10 bg-[#151619] p-2 shadow-float">
               <div class="border-b border-white/[0.07] px-3 py-3"><div class="truncate text-sm font-semibold"><%= currentUser.display_name %></div><div class="mt-1 text-[10px] text-zinc-600">@<%= currentUser.username %> &middot; <span class="text-acid"><%= currentUser.role %></span></div></div>
-              <a data-shot-navigation href="/<%= filterQuery ? '?' + filterQuery : '' %>" class="nav-item mt-1"><i data-lucide="layout-grid" class="h-4 w-4"></i>Shot grid</a>
-              <a href="/prompt-library" class="nav-item"><i data-lucide="book-open" class="h-4 w-4"></i>Prompt Library</a>
-              <a href="/asset-library" class="nav-item"><i data-lucide="library" class="h-4 w-4"></i>Asset Library</a>
+              <a data-shot-navigation href="<%= basePath %>/<%= filterQuery ? '?' + filterQuery : '' %>" class="nav-item mt-1"><i data-lucide="layout-grid" class="h-4 w-4"></i>Shot grid</a>
+              <a href="<%= basePath %>/prompt-library" class="nav-item"><i data-lucide="book-open" class="h-4 w-4"></i>Prompt Library</a>
+              <a href="<%= basePath %>/asset-library" class="nav-item"><i data-lucide="library" class="h-4 w-4"></i>Asset Library</a>
               <button id="shotLogoutButton" class="nav-item text-red-300/70 hover:text-red-200"><i data-lucide="log-out" class="h-4 w-4"></i>Sign out</button>
             </div>
           </div>
@@ -52,7 +53,7 @@
         <div class="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
           <div>
             <div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-700">
-              <a data-shot-navigation href="/<%= filterQuery ? '?' + filterQuery : '' %>" class="transition hover:text-zinc-400"><%= project.code %></a><i data-lucide="chevron-right" class="h-3 w-3"></i><span class="text-acid">#Seq <%= plan.sequence_number %></span><i data-lucide="chevron-right" class="h-3 w-3"></i><span class="text-acid">#Shot <%= plan.shot_number %></span>
+              <a data-shot-navigation href="<%= basePath %>/<%= filterQuery ? '?' + filterQuery : '' %>" class="transition hover:text-zinc-400"><%= project.code %></a><i data-lucide="chevron-right" class="h-3 w-3"></i><span class="text-acid">#Seq <%= plan.sequence_number %></span><i data-lucide="chevron-right" class="h-3 w-3"></i><span class="text-acid">#Shot <%= plan.shot_number %></span>
             </div>
             <div class="mt-3 flex flex-wrap items-center gap-3">
               <h1 class="text-3xl font-semibold tracking-[-0.04em] sm:text-4xl"><%= plan.title %></h1>
@@ -266,8 +267,8 @@
       window.__AI_HUB_RESOURCE_ROLES__ = <%- JSON.stringify(generationResourceRoles).replaceAll('<', '\\u003c') %>;
       window.__AI_HUB_GENERATION_CATALOGS__ = <%- JSON.stringify(generationCatalogs).replaceAll('<', '\\u003c') %>;
     </script>
-    <script src="/vendor/lucide/lucide.js"></script>
-    <script src="/js/shot-navigation.js" defer></script>
-    <script src="/js/plan-detail.js" defer></script>
+    <script src="<%= basePath %>/vendor/lucide/lucide.js"></script>
+    <script src="<%= basePath %>/js/shot-navigation.js" defer></script>
+    <script src="<%= basePath %>/js/plan-detail.js" defer></script>
   </body>
 </html>

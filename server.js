@@ -80,7 +80,10 @@ import {
 const serverPath = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(serverPath);
 const app = express();
+const router = express.Router();
 const port = Number(process.env.PORT || 4310);
+const rawBasePath = (process.env.BASE_PATH || process.env.AI_HUB_BASE_PATH || "").trim();
+const basePath = rawBasePath ? (rawBasePath.startsWith("/") ? rawBasePath : `/${rawBasePath}`).replace(/\/+$/, "") : "";
 const loginAttempts = new Map();
 const resourceCategories = ["Reference", "Generation", "Final", "Audio", "Document", "Other"];
 const assetCategories = ["Character Sheet", "Image", "Video Tutorial", "Documentation", "Reference", "Audio", "Other"];
@@ -90,8 +93,8 @@ function resourceForClient(resource) {
   const { storage_key: _storageKey, ...publicResource } = resource;
   return {
     ...publicResource,
-    content_url: `/resources/${resource.id}/content`,
-    download_url: `/resources/${resource.id}/content?download=1`
+    content_url: `${basePath}/resources/${resource.id}/content`,
+    download_url: `${basePath}/resources/${resource.id}/content?download=1`
   };
 }
 
@@ -114,8 +117,8 @@ function fileForClient(file, route) {
   const { storage_key: _storageKey, ...publicFile } = file;
   return {
     ...publicFile,
-    content_url: `${route}/${file.id}/content`,
-    download_url: `${route}/${file.id}/content?download=1`
+    content_url: `${basePath}${route}/${file.id}/content`,
+    download_url: `${basePath}${route}/${file.id}/content?download=1`
   };
 }
 
@@ -135,26 +138,27 @@ function roleDefinitions() {
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 app.disable("x-powered-by");
+app.locals.basePath = basePath;
 
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: false }));
-app.use(express.static(path.join(__dirname, "public")));
-app.use(
-  "/vendor/lucide",
-  express.static(path.join(__dirname, "node_modules", "lucide", "dist", "umd"))
-);
-
 app.use((_request, response, next) => {
   response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("X-Frame-Options", "DENY");
   response.setHeader("Referrer-Policy", "same-origin");
+  response.locals.basePath = basePath;
   next();
 });
 
-app.use(authMiddleware);
+router.use(express.static(path.join(__dirname, "public")));
+router.use(
+  "/vendor/lucide",
+  express.static(path.join(__dirname, "node_modules", "lucide", "dist", "umd"))
+);
+router.use(authMiddleware);
 
-app.get("/login", (request, response) => {
-  if (request.user) return response.redirect("/");
+router.get("/login", (request, response) => {
+  if (request.user) return response.redirect(`${basePath}/`);
   response.setHeader("Cache-Control", "no-store");
   response.render("login");
 });
@@ -184,7 +188,7 @@ function clearAttempts(request, username) {
   loginAttempts.delete(attemptKey(request, username));
 }
 
-app.post("/auth/identify", (request, response) => {
+router.post("/auth/identify", (request, response) => {
   const account = identifyAccount(request.body.username);
   if (!account) return response.status(404).json({ error: "We couldn't find an active account with that username" });
   response.json({
@@ -195,7 +199,7 @@ app.post("/auth/identify", (request, response) => {
   });
 });
 
-app.post("/auth/activate", async (request, response) => {
+router.post("/auth/activate", async (request, response) => {
   const { username, password, confirmation } = request.body;
   if (isRateLimited(request, username)) return response.status(429).json({ error: "Too many attempts. Try again later" });
   if (password !== confirmation) return response.status(400).json({ error: "Passwords do not match" });
@@ -210,7 +214,7 @@ app.post("/auth/activate", async (request, response) => {
   }
 });
 
-app.post("/auth/login", async (request, response) => {
+router.post("/auth/login", async (request, response) => {
   const { username, password } = request.body;
   if (isRateLimited(request, username)) return response.status(429).json({ error: "Too many attempts. Try again later" });
   const user = await authenticateAccount(username, password);
@@ -223,7 +227,7 @@ app.post("/auth/login", async (request, response) => {
   response.json({ user });
 });
 
-app.post("/auth/logout", (request, response) => {
+router.post("/auth/logout", (request, response) => {
   endSession(response, request);
   response.status(204).end();
 });
@@ -231,7 +235,7 @@ app.post("/auth/logout", (request, response) => {
 function requireAuth(request, response, next) {
   if (request.user) return next();
   if (request.path.startsWith("/api/")) return response.status(401).json({ error: "Sign in required" });
-  response.redirect("/login");
+  response.redirect(`${basePath}/login`);
 }
 
 function requirePermission(permission) {
@@ -241,13 +245,13 @@ function requirePermission(permission) {
   };
 }
 
-app.get("/health", (_request, response) => {
+router.get("/health", (_request, response) => {
   response.json({ status: "ok", product: "AI Hub" });
 });
 
-app.use(requireAuth);
+router.use(requireAuth);
 
-app.get("/storage/thumbnails/cinematic-frames", (request, response) => {
+router.get("/storage/thumbnails/cinematic-frames", (request, response) => {
   const thumbnailPath = absoluteStoragePath(cinematicThumbnailStorageKey);
   let thumbnailStats;
   try {
@@ -269,7 +273,7 @@ app.get("/storage/thumbnails/cinematic-frames", (request, response) => {
   fs.createReadStream(thumbnailPath).pipe(response);
 });
 
-app.get("/", (request, response) => {
+router.get("/", (request, response) => {
   let numberFilters;
   try { numberFilters = shotFilters(request.query); } catch (error) { return response.status(400).send(error.message); }
   const dashboard = getDashboard();
@@ -294,7 +298,7 @@ function allowedStatusesForPlan(user, permissions, plan) {
   return permissions.allowedStatuses;
 }
 
-app.get("/prompt-library", (request, response) => {
+router.get("/prompt-library", (request, response) => {
   const dashboard = getDashboard();
   const prompts = listPrompts().map(promptForClient);
   response.render("prompt-library", {
@@ -307,7 +311,7 @@ app.get("/prompt-library", (request, response) => {
   });
 });
 
-app.get("/asset-library", (request, response) => {
+router.get("/asset-library", (request, response) => {
   const dashboard = getDashboard();
   const assets = listLibraryAssets().map(libraryAssetForClient);
   response.render("asset-library", {
@@ -321,7 +325,7 @@ app.get("/asset-library", (request, response) => {
   });
 });
 
-app.get("/plans/:id", (request, response) => {
+router.get("/plans/:id", (request, response) => {
   const plan = getPlan(Number(request.params.id));
   if (!plan) return response.status(404).send("Shot not found");
   const displayPlan = planForClient(plan);
@@ -356,18 +360,18 @@ app.get("/plans/:id", (request, response) => {
   });
 });
 
-app.get("/api/plans", (request, response) => {
+router.get("/api/plans", (request, response) => {
   try { response.json(getDashboard(request.query).plans); }
   catch (error) { response.status(400).json({ error: error.message }); }
 });
 
-app.get("/api/plans/:id", (request, response) => {
+router.get("/api/plans/:id", (request, response) => {
   const plan = getPlan(Number(request.params.id));
   if (!plan) return response.status(404).json({ error: "Plan not found" });
   response.json(planForClient(plan));
 });
 
-app.post("/api/plans", requirePermission("canCreatePlans"), (request, response) => {
+router.post("/api/plans", requirePermission("canCreatePlans"), (request, response) => {
   try {
     const plan = createPlan(request.body);
     response.status(201).json(planForClient(plan));
@@ -376,7 +380,7 @@ app.post("/api/plans", requirePermission("canCreatePlans"), (request, response) 
   }
 });
 
-app.patch("/api/plans/:id/status", (request, response) => {
+router.patch("/api/plans/:id/status", (request, response) => {
   try {
     const currentPlan = getPlan(Number(request.params.id));
     if (!currentPlan) return response.status(404).json({ error: "Plan not found" });
@@ -396,7 +400,7 @@ app.patch("/api/plans/:id/status", (request, response) => {
   }
 });
 
-app.post("/api/plans/:id/approval", requirePermission("canApprovePlans"), (request, response) => {
+router.post("/api/plans/:id/approval", requirePermission("canApprovePlans"), (request, response) => {
   try {
     response.json(planForClient(approvePlan(Number(request.params.id), request.user.id, request.body?.generation_id)));
   } catch (error) {
@@ -404,7 +408,7 @@ app.post("/api/plans/:id/approval", requirePermission("canApprovePlans"), (reque
   }
 });
 
-app.patch("/api/plans/:id", requirePermission("canEditPlans"), (request, response) => {
+router.patch("/api/plans/:id", requirePermission("canEditPlans"), (request, response) => {
   try {
     const plan = updatePlan(Number(request.params.id), request.body);
     response.json(planForClient(plan));
@@ -413,7 +417,7 @@ app.patch("/api/plans/:id", requirePermission("canEditPlans"), (request, respons
   }
 });
 
-app.post("/api/plans/:id/generations", requirePermission("canEditPlans"), (request, response) => {
+router.post("/api/plans/:id/generations", requirePermission("canEditPlans"), (request, response) => {
   try {
     if (request.body.status === "Approved" && !request.permissions.canApprovePlans) {
       return response.status(403).json({ error: "Only an Admin or Supervisor can approve a generation" });
@@ -426,7 +430,7 @@ app.post("/api/plans/:id/generations", requirePermission("canEditPlans"), (reque
   }
 });
 
-app.patch("/api/generations/:id", requirePermission("canEditPlans"), (request, response) => {
+router.patch("/api/generations/:id", requirePermission("canEditPlans"), (request, response) => {
   try {
     const generation = getGeneration(Number(request.params.id));
     if (!generation) return response.status(404).json({ error: "Generation not found" });
@@ -441,7 +445,7 @@ app.patch("/api/generations/:id", requirePermission("canEditPlans"), (request, r
   }
 });
 
-app.patch("/api/generations/:id/status", (request, response) => {
+router.patch("/api/generations/:id/status", (request, response) => {
   try {
     const generation = getGeneration(Number(request.params.id));
     if (!generation) return response.status(404).json({ error: "Generation not found" });
@@ -465,7 +469,7 @@ app.patch("/api/generations/:id/status", (request, response) => {
   }
 });
 
-app.post("/api/generations/:id/approval", requirePermission("canApprovePlans"), (request, response) => {
+router.post("/api/generations/:id/approval", requirePermission("canApprovePlans"), (request, response) => {
   try {
     const generation = getGeneration(Number(request.params.id));
     if (!generation) return response.status(404).json({ error: "Generation not found" });
@@ -479,7 +483,7 @@ app.post("/api/generations/:id/approval", requirePermission("canApprovePlans"), 
   }
 });
 
-app.delete("/api/generations/:id", requirePermission("canDeletePlans"), (request, response) => {
+router.delete("/api/generations/:id", requirePermission("canDeletePlans"), (request, response) => {
   try {
     const planId = deleteGeneration(Number(request.params.id));
     response.json(planForClient(getPlan(planId)));
@@ -488,7 +492,7 @@ app.delete("/api/generations/:id", requirePermission("canDeletePlans"), (request
   }
 });
 
-app.delete("/api/plans/:id", requirePermission("canDeletePlans"), async (request, response) => {
+router.delete("/api/plans/:id", requirePermission("canDeletePlans"), async (request, response) => {
   try {
     const storageKeys = deletePlan(Number(request.params.id));
     await Promise.allSettled(storageKeys.map((key) => removeStoredFile(key)));
@@ -498,7 +502,7 @@ app.delete("/api/plans/:id", requirePermission("canDeletePlans"), async (request
   }
 });
 
-app.patch("/api/plans/:id/selected-generation", requirePermission("canEditPlans"), (request, response) => {
+router.patch("/api/plans/:id/selected-generation", requirePermission("canEditPlans"), (request, response) => {
   try {
     const plan = selectGeneration(Number(request.params.id), Number(request.body.generation_id));
     response.json(planForClient(plan));
@@ -507,7 +511,7 @@ app.patch("/api/plans/:id/selected-generation", requirePermission("canEditPlans"
   }
 });
 
-app.get("/api/plans/:id/resources", (request, response) => {
+router.get("/api/plans/:id/resources", (request, response) => {
   const plan = getPlan(Number(request.params.id));
   if (!plan) return response.status(404).json({ error: "Plan not found" });
   response.json({
@@ -517,7 +521,7 @@ app.get("/api/plans/:id/resources", (request, response) => {
   });
 });
 
-app.post("/api/plans/:id/resources", requirePermission("canEditPlans"), (request, response) => {
+router.post("/api/plans/:id/resources", requirePermission("canEditPlans"), (request, response) => {
   const plan = getPlan(Number(request.params.id));
   if (!plan) return response.status(404).json({ error: "Plan not found" });
 
@@ -569,7 +573,7 @@ app.post("/api/plans/:id/resources", requirePermission("canEditPlans"), (request
   });
 });
 
-app.patch("/api/resources/:id", requirePermission("canEditPlans"), (request, response) => {
+router.patch("/api/resources/:id", requirePermission("canEditPlans"), (request, response) => {
   try {
     const current = getResource(Number(request.params.id));
     if (!current) return response.status(404).json({ error: "Resource not found" });
@@ -582,7 +586,7 @@ app.patch("/api/resources/:id", requirePermission("canEditPlans"), (request, res
   }
 });
 
-app.delete("/api/resources/:id", requirePermission("canEditPlans"), async (request, response) => {
+router.delete("/api/resources/:id", requirePermission("canEditPlans"), async (request, response) => {
   try {
     const resource = getResource(Number(request.params.id));
     if (!resource) return response.status(404).json({ error: "Resource not found" });
@@ -640,7 +644,7 @@ async function streamStoredFile(record, request, response) {
   fs.createReadStream(filePath).pipe(response);
 }
 
-app.get("/resources/:id/content", async (request, response) => {
+router.get("/resources/:id/content", async (request, response) => {
   const resource = getResource(Number(request.params.id));
   if (!resource) return response.status(404).json({ error: "Resource not found" });
   await streamStoredFile(resource, request, response);
@@ -680,11 +684,11 @@ function receiveLibraryUpload(upload, request, response, save) {
   });
 }
 
-app.get("/api/prompts", (_request, response) => {
+router.get("/api/prompts", (_request, response) => {
   response.json(listPrompts().map(promptForClient));
 });
 
-app.post("/api/prompts", requirePermission("canManageLibraries"), (request, response) => {
+router.post("/api/prompts", requirePermission("canManageLibraries"), (request, response) => {
   try {
     response.status(201).json(promptForClient(createPrompt(request.body, request.user.id)));
   } catch (error) {
@@ -692,7 +696,7 @@ app.post("/api/prompts", requirePermission("canManageLibraries"), (request, resp
   }
 });
 
-app.patch("/api/prompts/:id", requirePermission("canManageLibraries"), (request, response) => {
+router.patch("/api/prompts/:id", requirePermission("canManageLibraries"), (request, response) => {
   try {
     response.json(promptForClient(updatePrompt(Number(request.params.id), request.body)));
   } catch (error) {
@@ -700,7 +704,7 @@ app.patch("/api/prompts/:id", requirePermission("canManageLibraries"), (request,
   }
 });
 
-app.delete("/api/prompts/:id", requirePermission("canManageLibraries"), async (request, response) => {
+router.delete("/api/prompts/:id", requirePermission("canManageLibraries"), async (request, response) => {
   try {
     const storageKeys = deletePrompt(Number(request.params.id));
     await Promise.allSettled(storageKeys.map((key) => removeStoredFile(key)));
@@ -710,7 +714,7 @@ app.delete("/api/prompts/:id", requirePermission("canManageLibraries"), async (r
   }
 });
 
-app.post("/api/prompts/:id/assets", requirePermission("canManageLibraries"), (request, response) => {
+router.post("/api/prompts/:id/assets", requirePermission("canManageLibraries"), (request, response) => {
   const prompt = getPrompt(Number(request.params.id));
   if (!prompt) return response.status(404).json({ error: "Prompt not found" });
   receiveLibraryUpload(uploadPromptAssetFile, request, response, (file) => fileForClient(createPromptAsset({
@@ -720,7 +724,7 @@ app.post("/api/prompts/:id/assets", requirePermission("canManageLibraries"), (re
   }), "/prompt-assets"));
 });
 
-app.delete("/api/prompt-assets/:id", requirePermission("canManageLibraries"), async (request, response) => {
+router.delete("/api/prompt-assets/:id", requirePermission("canManageLibraries"), async (request, response) => {
   try {
     const asset = deletePromptAsset(Number(request.params.id));
     await removeStoredFile(asset.storage_key);
@@ -730,17 +734,17 @@ app.delete("/api/prompt-assets/:id", requirePermission("canManageLibraries"), as
   }
 });
 
-app.get("/prompt-assets/:id/content", async (request, response) => {
+router.get("/prompt-assets/:id/content", async (request, response) => {
   const asset = getPromptAsset(Number(request.params.id));
   if (!asset) return response.status(404).json({ error: "Prompt asset not found" });
   await streamStoredFile(asset, request, response);
 });
 
-app.get("/api/library-assets", (_request, response) => {
+router.get("/api/library-assets", (_request, response) => {
   response.json({ assets: listLibraryAssets().map(libraryAssetForClient), categories: assetCategories });
 });
 
-app.post("/api/library-assets", requirePermission("canManageLibraries"), (request, response) => {
+router.post("/api/library-assets", requirePermission("canManageLibraries"), (request, response) => {
   receiveLibraryUpload(uploadAssetLibraryFile, request, response, (file) => {
     const category = assetCategories.includes(request.body.category) ? request.body.category : "Other";
     return libraryAssetForClient(createLibraryAsset({
@@ -754,7 +758,7 @@ app.post("/api/library-assets", requirePermission("canManageLibraries"), (reques
   });
 });
 
-app.patch("/api/library-assets/:id", requirePermission("canManageLibraries"), (request, response) => {
+router.patch("/api/library-assets/:id", requirePermission("canManageLibraries"), (request, response) => {
   try {
     if (request.body.category !== undefined && !assetCategories.includes(request.body.category)) throw new Error("Invalid asset category");
     response.json(libraryAssetForClient(updateLibraryAsset(Number(request.params.id), request.body)));
@@ -763,7 +767,7 @@ app.patch("/api/library-assets/:id", requirePermission("canManageLibraries"), (r
   }
 });
 
-app.delete("/api/library-assets/:id", requirePermission("canManageLibraries"), async (request, response) => {
+router.delete("/api/library-assets/:id", requirePermission("canManageLibraries"), async (request, response) => {
   try {
     const asset = deleteLibraryAsset(Number(request.params.id));
     await removeStoredFile(asset.storage_key);
@@ -773,17 +777,17 @@ app.delete("/api/library-assets/:id", requirePermission("canManageLibraries"), a
   }
 });
 
-app.get("/library-assets/:id/content", async (request, response) => {
+router.get("/library-assets/:id/content", async (request, response) => {
   const asset = getLibraryAsset(Number(request.params.id));
   if (!asset) return response.status(404).json({ error: "Asset not found" });
   await streamStoredFile(asset, request, response);
 });
 
-app.get("/api/users", requirePermission("canManageAccounts"), (_request, response) => {
+router.get("/api/users", requirePermission("canManageAccounts"), (_request, response) => {
   response.json({ users: listAccounts(), roles: listWorkspaceRoles() });
 });
 
-app.post("/api/users", requirePermission("canManageAccounts"), (request, response) => {
+router.post("/api/users", requirePermission("canManageAccounts"), (request, response) => {
   try {
     const username = normalizeUsername(request.body.username);
     const displayName = String(request.body.display_name || "").trim();
@@ -798,7 +802,7 @@ app.post("/api/users", requirePermission("canManageAccounts"), (request, respons
   }
 });
 
-app.patch("/api/users/:id", requirePermission("canManageAccounts"), (request, response) => {
+router.patch("/api/users/:id", requirePermission("canManageAccounts"), (request, response) => {
   try {
     const role = request.body.role;
     if (role !== undefined && !getWorkspaceRole(role)) throw new Error("Invalid role");
@@ -809,7 +813,7 @@ app.patch("/api/users/:id", requirePermission("canManageAccounts"), (request, re
   }
 });
 
-app.post("/api/roles", requirePermission("canManageAccounts"), (request, response) => {
+router.post("/api/roles", requirePermission("canManageAccounts"), (request, response) => {
   try {
     response.status(201).json(createWorkspaceRole(request.body));
   } catch (error) {
@@ -817,7 +821,7 @@ app.post("/api/roles", requirePermission("canManageAccounts"), (request, respons
   }
 });
 
-app.patch("/api/roles/:id", requirePermission("canManageAccounts"), (request, response) => {
+router.patch("/api/roles/:id", requirePermission("canManageAccounts"), (request, response) => {
   try {
     response.json(updateWorkspaceRole(Number(request.params.id), request.body));
   } catch (error) {
@@ -825,7 +829,7 @@ app.patch("/api/roles/:id", requirePermission("canManageAccounts"), (request, re
   }
 });
 
-app.delete("/api/roles/:id", requirePermission("canManageAccounts"), (request, response) => {
+router.delete("/api/roles/:id", requirePermission("canManageAccounts"), (request, response) => {
   try {
     deleteWorkspaceRole(Number(request.params.id));
     response.status(204).end();
@@ -834,11 +838,11 @@ app.delete("/api/roles/:id", requirePermission("canManageAccounts"), (request, r
   }
 });
 
-app.get("/api/admin/catalogs", requirePermission("canManageAccounts"), (_request, response) => {
+router.get("/api/admin/catalogs", requirePermission("canManageAccounts"), (_request, response) => {
   response.json(getGenerationCatalogs({ includeInactive: true }));
 });
 
-app.post("/api/admin/catalogs/:type", requirePermission("canManageAccounts"), (request, response) => {
+router.post("/api/admin/catalogs/:type", requirePermission("canManageAccounts"), (request, response) => {
   try {
     response.status(201).json(createCatalogItem(request.params.type, request.body));
   } catch (error) {
@@ -846,7 +850,7 @@ app.post("/api/admin/catalogs/:type", requirePermission("canManageAccounts"), (r
   }
 });
 
-app.patch("/api/admin/catalogs/:type/:id", requirePermission("canManageAccounts"), (request, response) => {
+router.patch("/api/admin/catalogs/:type/:id", requirePermission("canManageAccounts"), (request, response) => {
   try {
     response.json(updateCatalogItem(request.params.type, Number(request.params.id), request.body));
   } catch (error) {
@@ -854,9 +858,23 @@ app.patch("/api/admin/catalogs/:type/:id", requirePermission("canManageAccounts"
   }
 });
 
-app.get("/api/session", (request, response) => {
+router.get("/api/session", (request, response) => {
   response.json({ user: request.user, permissions: permissionsFor(request.user.role) });
 });
+
+router.use((_request, response) => {
+  response.status(404).json({ error: "Not found" });
+});
+
+if (basePath) {
+  app.get("/health", (_request, response) => {
+    response.json({ status: "ok", product: "AI Hub" });
+  });
+  app.get("/", (_request, response) => response.redirect(basePath + "/"));
+  app.use(basePath, router);
+} else {
+  app.use(router);
+}
 
 app.use((_request, response) => {
   response.status(404).json({ error: "Not found" });

@@ -149,7 +149,7 @@ document.querySelector("#addLibraryItem")?.addEventListener("click", openModal);
 document.querySelectorAll(".library-modal-close").forEach((button) => button.addEventListener("click", closeModal));
 modal?.addEventListener("click", (event) => { if (event.target === modal) closeModal(); });
 document.querySelector(".library-mobile-menu")?.addEventListener("click", () => document.querySelector(".app-sidebar").classList.toggle("mobile-open"));
-document.querySelector(".library-logout")?.addEventListener("click", async () => { await fetch("/auth/logout", { method: "POST" }); window.location.assign("/login"); });
+document.querySelector(".library-logout")?.addEventListener("click", async () => { await fetch("/auth/logout", { method: "POST" }); window.location.assign(`${window.__AI_HUB_BASE__ || ""}/login`); });
 document.querySelectorAll("[data-planned-feature]").forEach((button) => button.addEventListener("click", () => showToast(`${button.dataset.plannedFeature} is planned for a future update`)));
 
 document.querySelector("#promptAssetPicker")?.addEventListener("change", async (event) => {

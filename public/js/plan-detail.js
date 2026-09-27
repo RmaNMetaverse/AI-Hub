@@ -105,7 +105,7 @@ document.addEventListener("click", (event) => {
 });
 document.querySelector("#shotLogoutButton")?.addEventListener("click", async () => {
   await fetch("/auth/logout", { method: "POST" });
-  window.location.assign("/login");
+  window.location.assign(`${window.__AI_HUB_BASE__ || ""}/login`);
 });
 document.querySelector("#deleteShotButton")?.addEventListener("click", async () => {
   if (!window.confirm(`Delete #Seq ${plan.sequence_number} / #Shot ${plan.shot_number}, including all generations and files? This cannot be undone.`)) return;
@@ -114,7 +114,7 @@ document.querySelector("#deleteShotButton")?.addEventListener("click", async () 
     const payload = await response.json().catch(() => ({}));
     return showToast(payload.error || "Could not delete shot");
   }
-  window.location.assign("/");
+  window.location.assign(window.__AI_HUB_BASE__ ? window.__AI_HUB_BASE__ + "/" : "/");
 });
 
 function openModal(modal) {

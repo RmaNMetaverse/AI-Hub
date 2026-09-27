@@ -1,0 +1,12 @@
+<script>
+  window.__AI_HUB_BASE__ = "<%= basePath %>";
+  if (window.__AI_HUB_BASE__) {
+    const _origFetch = window.fetch;
+    window.fetch = function(input, init) {
+      if (typeof input === "string" && input.startsWith("/") && !input.startsWith(window.__AI_HUB_BASE__ + "/") && input !== window.__AI_HUB_BASE__) {
+        input = window.__AI_HUB_BASE__ + input;
+      }
+      return _origFetch.call(this, input, init);
+    };
+  }
+</script>

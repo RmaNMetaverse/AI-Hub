@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.7
 
-ARG NODE_VERSION=22-bookworm-slim
+ARG NODE_IMAGE=node:22-bookworm-slim
 
-FROM node:${NODE_VERSION} AS base
+FROM ${NODE_IMAGE} AS base
 WORKDIR /app
 ENV NPM_CONFIG_FUND=false \
     NPM_CONFIG_UPDATE_NOTIFIER=false
@@ -35,7 +35,7 @@ FROM dependencies AS builder
 COPY . .
 RUN npm run css:build && npm prune --omit=dev
 
-FROM node:${NODE_VERSION} AS production
+FROM ${NODE_IMAGE} AS production
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=4310 \
