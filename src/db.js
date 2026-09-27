@@ -28,7 +28,7 @@ db.exec(`
     shot_code TEXT NOT NULL,
     title TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    status TEXT NOT NULL DEFAULT 'Idea',
+    status TEXT NOT NULL DEFAULT 'WIP',
     media_type TEXT NOT NULL DEFAULT 'Video',
     sequence_name TEXT NOT NULL DEFAULT 'Sequence 01',
     scene_name TEXT NOT NULL DEFAULT 'Scene 01',
@@ -57,6 +57,7 @@ db.exec(`
     label TEXT NOT NULL,
     prompt_version TEXT NOT NULL,
     model TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'WIP',
     rating REAL NOT NULL DEFAULT 0,
     verdict TEXT NOT NULL DEFAULT 'Promising',
     notes TEXT NOT NULL DEFAULT '',
@@ -258,16 +259,24 @@ ensureColumn("generations", "platform_name", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("generations", "token_count", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("generations", "token_price_snapshot", "REAL NOT NULL DEFAULT 0");
 ensureColumn("generations", "created_by", "INTEGER");
+ensureColumn("generations", "status", "TEXT NOT NULL DEFAULT 'WIP'");
 ensureColumn("generations", "updated_at", "TEXT");
 ensureColumn("users", "role_id", "INTEGER REFERENCES workspace_roles(id)");
-db.exec("CREATE INDEX IF NOT EXISTS ai_plans_selected_generation_idx ON ai_plans(selected_generation_id)");
+db.exec(`
+  CREATE INDEX IF NOT EXISTS ai_plans_selected_generation_idx ON ai_plans(selected_generation_id);
+  CREATE INDEX IF NOT EXISTS generations_status_idx ON generations(status);
+  UPDATE ai_plans SET status = 'WIP' WHERE status NOT IN ('WIP', 'Approved');
+  UPDATE ai_plans SET status = 'Approved' WHERE status = 'Delivered';
+  UPDATE generations SET status = 'WIP' WHERE status NOT IN ('WIP', 'Approved') OR status IS NULL;
+  UPDATE generations SET status = 'Approved' WHERE id IN (SELECT generation_id FROM plan_approvals);
+`);
 
 const defaultWorkspaceRoles = [
   ["Admin", "Full workspace and account control.", 1, 1, 1, 1, 1, 1, 1, 1],
   ["Supervisor", "Manage production and approve generated shots.", 1, 0, 1, 1, 1, 1, 1, 1],
   ["Generator", "Create shots, upload assets, and manage generations.", 1, 0, 1, 1, 1, 1, 0, 1],
   ["Creator", "Create plans, edit creative details, and manage generations.", 1, 0, 1, 1, 1, 1, 0, 1],
-  ["Reviewer", "Review work and request revisions.", 1, 0, 0, 0, 0, 0, 1, 0],
+  ["Reviewer", "Review work and add feedback.", 1, 0, 0, 0, 0, 0, 1, 0],
   ["Viewer", "Read-only workspace access.", 1, 0, 0, 0, 0, 0, 0, 0]
 ];
 const seedWorkspaceRoles = db.transaction(() => {
@@ -454,7 +463,7 @@ function seedDatabase() {
 
   const plans = [
     {
-      shot_code: "SC01-SH006", title: "First Light", status: "Brief Ready",
+      shot_code: "SC01-SH006", title: "First Light", status: "WIP",
       description: "Mara reaches the survey ridge as the planet's twin dawn breaks over the basin.",
       model: "Sora 2 Pro", quality: 3.8, due_date: "2026-08-08", priority: "High",
       experiments_count: 6, next_action: "Lock the astronaut silhouette", issue: "",
@@ -462,7 +471,7 @@ function seedDatabase() {
       tags: "desert,astronaut,establishing", image_position: "0% 0%", owner: "Nika", duration: "8 sec"
     },
     {
-      shot_code: "SC02-SH014", title: "Signal District", status: "Generating",
+      shot_code: "SC02-SH014", title: "Signal District", status: "WIP",
       description: "A courier crosses the flooded lower city while the first signal interrupts every display.",
       model: "Veo 3.1", quality: 3.4, due_date: "2026-08-09", priority: "Critical",
       experiments_count: 12, next_action: "Reduce background flicker", issue: "Signage flickers between frames",
@@ -470,7 +479,7 @@ function seedDatabase() {
       tags: "city,rain,night", image_position: "50% 0%", owner: "Arman", duration: "6 sec"
     },
     {
-      shot_code: "SC03-SH002", title: "The Memory Test", status: "Review",
+      shot_code: "SC03-SH002", title: "The Memory Test", status: "WIP",
       description: "Close portrait as fragments of the recovered transmission pass across Mara's face.",
       model: "Kling 3.0", quality: 4.6, due_date: "2026-08-06", priority: "High",
       experiments_count: 18, next_action: "Director selects take A or D", issue: "",
@@ -486,7 +495,7 @@ function seedDatabase() {
       tags: "space,station,vfx", image_position: "0% 100%", owner: "Reza", duration: "10 sec"
     },
     {
-      shot_code: "SC01-SH011", title: "Salt Run", status: "Revision",
+      shot_code: "SC01-SH011", title: "Salt Run", status: "WIP",
       description: "The survey vehicle races toward the horizon as the storm begins to erase the road behind it.",
       model: "Luma Ray 3", quality: 3.9, due_date: "2026-08-10", priority: "Medium",
       experiments_count: 14, next_action: "Correct wheel motion", issue: "Rear wheel motion drifts",
@@ -494,7 +503,7 @@ function seedDatabase() {
       tags: "car,salt-flat,motion", image_position: "50% 100%", owner: "Nika", duration: "7 sec"
     },
     {
-      shot_code: "SC05-SH004", title: "Forest Gate", status: "Idea",
+      shot_code: "SC05-SH004", title: "Forest Gate", status: "WIP",
       description: "A geometric aperture appears inside the forest after the signal reaches Earth.",
       model: "Not selected", quality: 0, due_date: "2026-08-14", priority: "Low",
       experiments_count: 0, next_action: "Build the reference board", issue: "",
@@ -504,8 +513,8 @@ function seedDatabase() {
   ];
 
   const insertGeneration = db.prepare(`
-    INSERT INTO generations (plan_id, label, prompt_version, model, rating, verdict, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO generations (plan_id, label, prompt_version, model, rating, verdict, notes, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const seed = db.transaction(() => {
@@ -523,12 +532,14 @@ function seedDatabase() {
       if (plan.experiments_count > 0) {
         insertGeneration.run(
           Number(result.lastInsertRowid), "Take A", "v3", plan.model,
-          Math.max(2.8, plan.quality - 0.4), "Needs revision", "Strong composition; motion needs refinement."
+          Math.max(2.8, plan.quality - 0.4), "Needs revision", "Strong composition; motion needs refinement.",
+          "WIP"
         );
         insertGeneration.run(
           Number(result.lastInsertRowid), "Take D", "v5", plan.model,
           plan.quality, plan.status === "Approved" ? "Approved" : "Final candidate",
-          "Best balance of continuity, atmosphere, and prompt adherence."
+          "Best balance of continuity, atmosphere, and prompt adherence.",
+          plan.status === "Approved" ? "Approved" : "WIP"
         );
       }
     });
@@ -768,6 +779,7 @@ function normalizeGeneration(generation) {
   const versionNumber = Number(generation.version_number) || Number(String(generation.prompt_version || "").match(/\d+/)?.[0]) || generation.id;
   return {
     ...generation,
+    status: generation.status || "WIP",
     version_number: versionNumber,
     version_label: `v${versionNumber}`,
     total_tokens: hasPlatformSnapshot ? tokenCount : legacyInputTokens + legacyOutputTokens,
@@ -844,7 +856,8 @@ function generationFields(planId, input, current = {}) {
     platform_name: platformName,
     token_count: tokenCount,
     token_price_snapshot: tokenPriceSnapshot,
-    seed: String(input.seed ?? current.seed ?? "").trim().slice(0, 240)
+    seed: String(input.seed ?? current.seed ?? "").trim().slice(0, 240),
+    status: ["WIP", "Approved"].includes(input.status) ? input.status : (current.status || "WIP")
   };
 }
 
@@ -885,10 +898,10 @@ export function createGeneration(planId, input, createdBy) {
     const result = db.prepare(`
       INSERT INTO generations (
         plan_id, label, prompt_version, version_number, model, notes, prompt, negative_prompt,
-        platform_id, platform_name, token_count, token_price_snapshot, seed, created_by, sequence_number, shot_number
+        platform_id, platform_name, token_count, token_price_snapshot, seed, created_by, sequence_number, shot_number, status
       ) VALUES (
         @plan_id, @label, @prompt_version, @version_number, @model, @notes, @prompt, @negative_prompt,
-        @platform_id, @platform_name, @token_count, @token_price_snapshot, @seed, @created_by, @sequence_number, @shot_number
+        @platform_id, @platform_name, @token_count, @token_price_snapshot, @seed, @created_by, @sequence_number, @shot_number, @status
       )
     `).run({ plan_id: planId, created_by: createdBy, ...fields, ...numbers });
     const id = Number(result.lastInsertRowid);
@@ -898,6 +911,10 @@ export function createGeneration(planId, input, createdBy) {
       SET experiments_count = experiments_count + 1, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(planId);
+    if (fields.status === "Approved") {
+      db.prepare("INSERT INTO plan_approvals (plan_id, generation_id, approved_by) VALUES (?, ?, ?)").run(planId, id, createdBy);
+      db.prepare("UPDATE ai_plans SET selected_generation_id = ?, status = 'Approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id, planId);
+    }
     return id;
   })();
 
@@ -918,10 +935,13 @@ export function updateGeneration(id, input) {
         label = @label, prompt_version = @prompt_version, version_number = @version_number,
         model = @model, notes = @notes, prompt = @prompt, negative_prompt = @negative_prompt,
         platform_id = @platform_id, platform_name = @platform_name, token_count = @token_count,
-        token_price_snapshot = @token_price_snapshot, seed = @seed, updated_at = CURRENT_TIMESTAMP
+        token_price_snapshot = @token_price_snapshot, seed = @seed, status = @status, updated_at = CURRENT_TIMESTAMP
       WHERE id = @id
     `).run({ id, ...fields });
     if (links) replaceGenerationResources(id, links);
+    if (fields.status === "Approved") {
+      db.prepare("UPDATE ai_plans SET selected_generation_id = ?, status = 'Approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id, current.plan_id);
+    }
     db.prepare("UPDATE ai_plans SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(current.plan_id);
   })();
 
@@ -935,22 +955,60 @@ export function selectGeneration(planId, generationId) {
   if (!generation) throw new Error("Generation does not belong to this shot");
   db.prepare(`
     UPDATE ai_plans SET selected_generation_id = ?,
-      status = CASE WHEN status IN ('Approved', 'Delivered') THEN 'Review' ELSE status END,
       updated_at = CURRENT_TIMESTAMP WHERE id = ?
   `).run(generationId, planId);
   return getPlan(planId);
 }
 
-export function approvePlan(planId, userId) {
+export function approvePlan(planId, userId, generationId = null) {
   const plan = db.prepare("SELECT * FROM ai_plans WHERE id = ?").get(planId);
   if (!plan) throw new Error("Plan not found");
-  if (!plan.selected_generation_id) throw new Error("Select a current final generation before approval");
+  const targetGenId = generationId || plan.selected_generation_id;
+  if (!targetGenId) {
+    const latestGen = db.prepare("SELECT id FROM generations WHERE plan_id = ? ORDER BY version_number DESC, id DESC LIMIT 1").get(planId);
+    if (latestGen) {
+      return approvePlan(planId, userId, latestGen.id);
+    }
+  }
   db.transaction(() => {
-    db.prepare("INSERT INTO plan_approvals (plan_id, generation_id, approved_by) VALUES (?, ?, ?)")
-      .run(planId, plan.selected_generation_id, userId);
+    if (targetGenId) {
+      const gen = db.prepare("SELECT id FROM generations WHERE id = ? AND plan_id = ?").get(targetGenId, planId);
+      if (gen) {
+        db.prepare("UPDATE generations SET status = 'Approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(targetGenId);
+        db.prepare("INSERT INTO plan_approvals (plan_id, generation_id, approved_by) VALUES (?, ?, ?)")
+          .run(planId, targetGenId, userId);
+        db.prepare("UPDATE ai_plans SET selected_generation_id = ?, status = 'Approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(targetGenId, planId);
+        return;
+      }
+    }
     db.prepare("UPDATE ai_plans SET status = 'Approved', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(planId);
   })();
   return getPlan(planId);
+}
+
+export function approveGeneration(generationId, userId) {
+  const generation = db.prepare("SELECT * FROM generations WHERE id = ?").get(generationId);
+  if (!generation) throw new Error("Generation not found");
+  return approvePlan(generation.plan_id, userId, generation.id);
+}
+
+export function updateGenerationStatus(generationId, status, userId = null) {
+  if (!["WIP", "Approved"].includes(status)) throw new Error("Invalid generation status");
+  const generation = db.prepare("SELECT * FROM generations WHERE id = ?").get(generationId);
+  if (!generation) throw new Error("Generation not found");
+
+  if (status === "Approved") {
+    return approvePlan(generation.plan_id, userId, generationId);
+  }
+
+  db.transaction(() => {
+    db.prepare("UPDATE generations SET status = 'WIP', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(generationId);
+    const hasApproved = db.prepare("SELECT 1 FROM generations WHERE plan_id = ? AND status = 'Approved' AND id <> ?").get(generation.plan_id, generationId);
+    if (!hasApproved) {
+      db.prepare("UPDATE ai_plans SET status = 'WIP', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(generation.plan_id);
+    }
+  })();
+  return getPlan(generation.plan_id);
 }
 
 export function deleteGeneration(id) {
@@ -959,14 +1017,15 @@ export function deleteGeneration(id) {
   db.transaction(() => {
     const plan = db.prepare("SELECT selected_generation_id, status FROM ai_plans WHERE id = ?").get(generation.plan_id);
     db.prepare("DELETE FROM generations WHERE id = ?").run(id);
+    const remainingApproved = db.prepare("SELECT 1 FROM generations WHERE plan_id = ? AND status = 'Approved'").get(generation.plan_id);
     db.prepare(`
       UPDATE ai_plans SET
         selected_generation_id = CASE WHEN selected_generation_id = ? THEN NULL ELSE selected_generation_id END,
-        status = CASE WHEN selected_generation_id = ? AND status IN ('Approved', 'Delivered') THEN 'Review' ELSE status END,
+        status = CASE WHEN ? THEN 'Approved' ELSE 'WIP' END,
         experiments_count = (SELECT COUNT(*) FROM generations WHERE plan_id = ?),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(id, id, generation.plan_id, generation.plan_id);
+    `).run(id, remainingApproved ? 1 : 0, generation.plan_id, generation.plan_id);
     if (!plan) throw new Error("Plan not found");
   })();
   return generation.plan_id;
@@ -1154,7 +1213,7 @@ export function deleteLibraryAsset(id) {
   return asset;
 }
 
-const allowedStatuses = new Set(["Idea", "Brief Ready", "Generating", "Review", "Revision", "Approved", "Delivered"]);
+const allowedStatuses = new Set(["WIP", "Approved"]);
 
 export function createPlan(input) {
   const title = String(input.title || "").trim();
@@ -1163,7 +1222,7 @@ export function createPlan(input) {
   const shotCode = `SQ${String(numbers.sequence_number).padStart(2, "0")}-SH${String(numbers.shot_number).padStart(3, "0")}`;
 
   const project = db.prepare("SELECT id FROM projects ORDER BY id LIMIT 1").get();
-  const status = allowedStatuses.has(input.status) ? input.status : "Idea";
+  const status = allowedStatuses.has(input.status) ? input.status : "WIP";
   const model = String(input.model || "Not selected").trim();
   if (model !== "Not selected" && !db.prepare("SELECT id FROM generation_models WHERE name = ? COLLATE NOCASE AND active = 1").get(model)) {
     throw new Error("Select an available AI model");
@@ -1189,10 +1248,15 @@ export function createPlan(input) {
   return getPlan(Number(result.lastInsertRowid));
 }
 
-export function updatePlanStatus(id, status) {
+export function updatePlanStatus(id, status, userId = null) {
   if (!allowedStatuses.has(status)) throw new Error("Invalid status");
-  const result = db.prepare("UPDATE ai_plans SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(status, id);
-  if (!result.changes) throw new Error("Plan not found");
+  if (status === "Approved") {
+    return approvePlan(id, userId);
+  }
+  db.transaction(() => {
+    db.prepare("UPDATE ai_plans SET status = 'WIP', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id);
+    db.prepare("UPDATE generations SET status = 'WIP', updated_at = CURRENT_TIMESTAMP WHERE plan_id = ?").run(id);
+  })();
   return getPlan(id);
 }
 

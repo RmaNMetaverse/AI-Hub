@@ -32,15 +32,10 @@ function escapeHtml(value = "") {
 
 function statusClass(status) {
   const classes = {
-    "Idea": "border-zinc-700/70 bg-zinc-800/60 text-zinc-400",
-    "Brief Ready": "border-violet-400/20 bg-violet-400/10 text-violet-300",
-    "Generating": "border-amber-400/20 bg-amber-400/10 text-amber-300",
-    "Revision": "border-orange-400/20 bg-orange-400/10 text-orange-300",
-    "Review": "border-sky-400/20 bg-sky-400/10 text-sky-300",
-    "Approved": "border-lime-400/20 bg-lime-400/10 text-lime-300",
-    "Delivered": "border-emerald-400/20 bg-emerald-400/10 text-emerald-300"
+    "WIP": "border-amber-400/20 bg-amber-400/10 text-amber-300",
+    "Approved": "border-lime-400/20 bg-lime-400/10 text-lime-300"
   };
-  return classes[status] || classes.Idea;
+  return classes[status] || classes.WIP;
 }
 
 
@@ -81,15 +76,14 @@ function shotCard(plan) {
 
 function renderStats() {
   const total = state.plans.length;
-  const active = state.plans.filter((plan) => ["Generating", "Revision"].includes(plan.status)).length;
-  const review = state.plans.filter((plan) => plan.status === "Review").length;
-  const approved = state.plans.filter((plan) => ["Approved", "Delivered"].includes(plan.status)).length;
-  const tests = state.plans.reduce((sum, plan) => sum + Number(plan.generation_count || 0), 0);
+  const wip = state.plans.filter((plan) => plan.status === "WIP").length;
+  const approved = state.plans.filter((plan) => plan.status === "Approved").length;
+  const generations = state.plans.reduce((sum, plan) => sum + Number(plan.generation_count || 0), 0);
   const stats = [
-    ["Total plans", total, "In this workspace", "clapperboard"],
-    ["In creation", active, `${tests} generations logged`, "wand-sparkles"],
-    ["Ready to review", review, "Director action needed", "messages-square"],
-    ["Approved", approved, `${Math.round((approved / Math.max(total, 1)) * 100)}% of production`, "circle-check"]
+    ["Total shots", total, "In this workspace", "clapperboard"],
+    ["WIP", wip, "In progress shots", "clock"],
+    ["Approved", approved, `${Math.round((approved / Math.max(total, 1)) * 100)}% of production`, "circle-check"],
+    ["Generations", generations, `${generations} logged across shots`, "layers-3"]
   ];
   els.stats.innerHTML = stats.map(([label, value, note, icon]) => `
     <div class="bg-[#0f1012] p-4 sm:p-5">

@@ -1,4 +1,4 @@
-<form id="shotNavigationForm" action="/" method="get" class="sticky top-[68px] z-30 mb-7 rounded-2xl border border-acid/20 bg-[#121510] p-4 sm:p-5" aria-label="Find shots by number">
+<form id="shotNavigationForm" action="/" method="get" class="sticky top-[68px] z-20 mb-7 rounded-2xl border border-acid/20 bg-[#121510] p-4 sm:p-5" aria-label="Find shots by number">
   <div class="mb-3 text-xs font-semibold text-zinc-400">Find shots · leave either field empty to include all numbers</div>
   <div class="flex flex-wrap items-end gap-3">
     <label class="min-w-0 flex-1"><span class="field-label text-acid">#Seq · Sequence number</span><input id="sequenceFilter" name="sequence_number" type="number" min="1" max="1000000" step="1" inputmode="numeric" class="field h-16 text-3xl font-semibold tabular-nums" placeholder="Any" value="<%= numberFilters.sequence_number || '' %>" /></label>

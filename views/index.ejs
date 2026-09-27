@@ -58,7 +58,7 @@
             <% } %>
             <div class="relative ml-1">
               <button id="accountButton" class="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-amber-200 to-orange-700 text-xs font-bold text-black ring-2 ring-transparent transition hover:ring-white/20" aria-label="Open account menu"><%= currentUser.display_name.split(/\s+/).map(part => part[0]).join('').slice(0,2).toUpperCase() %></button>
-              <div id="accountMenu" class="absolute right-0 top-12 hidden w-64 overflow-hidden rounded-2xl border border-white/10 bg-[#151619] p-2 shadow-float">
+              <div id="accountMenu" class="absolute right-0 top-12 z-50 hidden w-64 overflow-hidden rounded-2xl border border-white/10 bg-[#151619] p-2 shadow-float">
                 <div class="border-b border-white/[0.07] px-3 py-3"><div class="truncate text-sm font-semibold text-zinc-200"><%= currentUser.display_name %></div><div class="mt-1 flex items-center gap-2 text-[10px] text-zinc-600"><span>@<%= currentUser.username %></span><span>·</span><span class="text-acid"><%= currentUser.role %></span></div></div>
                 <% if (permissions.canManageAccounts) { %><button id="manageAccountsButton" class="nav-item mt-1"><i data-lucide="users-round" class="h-4 w-4"></i>Manage accounts</button><button id="manageCatalogsButton" class="nav-item"><i data-lucide="sliders-horizontal" class="h-4 w-4"></i>Generation settings</button><% } %>
                 <button id="logoutButton" class="nav-item text-red-300/70 hover:text-red-200"><i data-lucide="log-out" class="h-4 w-4"></i>Sign out</button>
@@ -80,8 +80,8 @@
             <div class="flex flex-wrap items-center gap-2">
               <select id="statusFilter" class="h-10 rounded-full border border-white/[0.08] bg-white/[0.035] px-3 text-xs font-medium text-zinc-400 outline-none">
                 <option value="all">All statuses</option>
-                <option>Idea</option><option>Brief Ready</option><option>Generating</option>
-                <option>Review</option><option>Revision</option><option>Approved</option><option>Delivered</option>
+                <option value="WIP">WIP</option>
+                <option value="Approved">Approved</option>
               </select>
             </div>
           </div>
@@ -169,7 +169,7 @@
           <label><span class="field-label">#Shot · Plan / Shot number *</span><input name="shot_number" type="number" min="1" max="1000000" step="1" class="field text-2xl" required /></label>
           <p class="text-xs text-zinc-500 sm:col-span-2">Both numbers are required and locked after creation. Every generation and uploaded file belongs to this numbered shot.</p>
           <label class="sm:col-span-2"><span class="field-label">Plan title *</span><input name="title" class="field" placeholder="e.g. Signal discovery" required /></label>
-          <label><span class="field-label">Status</span><select name="status" class="field"><option>Idea</option><option>Brief Ready</option><option>Generating</option><option>Review</option></select></label>
+          <label><span class="field-label">Status</span><select name="status" class="field"><option selected>WIP</option><option>Approved</option></select></label>
           <label><span class="field-label">Media type</span><select name="media_type" class="field"><option>Video</option><option>Image</option><option>Audio</option><option>Voice</option><option>VFX element</option></select></label>
           <label><span class="field-label">AI model</span><select name="model" class="field"><option>Not selected</option><% generationCatalogs.models.forEach(model => { %><option><%= model.name %></option><% }) %></select></label>
           <label><span class="field-label">Due date</span><input type="date" name="due_date" class="field" /></label>

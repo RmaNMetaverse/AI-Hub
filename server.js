@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { matchingShotNumbers, shotFilters } from "./src/shot-numbers.js";
 import {
+  approveGeneration,
   approvePlan,
   createAccount,
   createLibraryAsset,
@@ -45,6 +46,7 @@ import {
   deleteWorkspaceRole,
   updateCatalogItem,
   updateGeneration,
+  updateGenerationStatus,
   updateResource
 } from "./src/db.js";
 import {
@@ -288,8 +290,7 @@ app.get("/", (request, response) => {
 });
 
 function allowedStatusesForPlan(user, permissions, plan) {
-  if (["Approved", "Delivered"].includes(plan.status) && !permissions.canApprovePlans) return [];
-  if (permissions.canReviewPlans && !permissions.canManageWorkflow && plan.status !== "Review") return [];
+  if (plan.status === "Approved" && !permissions.canApprovePlans) return [];
   return permissions.allowedStatuses;
 }
 
@@ -379,25 +380,16 @@ app.patch("/api/plans/:id/status", (request, response) => {
   try {
     const currentPlan = getPlan(Number(request.params.id));
     if (!currentPlan) return response.status(404).json({ error: "Plan not found" });
-    if (["Approved", "Delivered"].includes(currentPlan.status) && !request.permissions.canApprovePlans) {
+    if (currentPlan.status === "Approved" && !request.permissions.canApprovePlans) {
       return response.status(403).json({ error: "Approved work can only be changed by an Admin or Supervisor" });
     }
-    if (request.permissions.canReviewPlans && !request.permissions.canManageWorkflow && currentPlan.status !== "Review") {
-      return response.status(403).json({ error: "Reviewers can only act on plans currently in review" });
+    if (request.body.status === "Approved" && !request.permissions.canApprovePlans) {
+      return response.status(403).json({ error: "Only an Admin or Supervisor can approve a shot" });
     }
-    if (request.body.status === "Approved") {
-      return response.status(400).json({ error: "Use the approval action to approve a shot" });
+    if (!["WIP", "Approved"].includes(request.body.status) || !request.permissions.allowedStatuses.includes(request.body.status)) {
+      return response.status(400).json({ error: "Invalid status or your role cannot move a plan to that status" });
     }
-    if (request.body.status === "Delivered" && !currentPlan.selected_generation_id) {
-      return response.status(400).json({ error: "Select a current final generation before approving this shot" });
-    }
-    if (request.body.status === "Delivered" && currentPlan.status !== "Approved") {
-      return response.status(400).json({ error: "Approve the selected generation before marking the shot delivered" });
-    }
-    if (!request.permissions.allowedStatuses.includes(request.body.status)) {
-      return response.status(403).json({ error: "Your role cannot move a plan to that status" });
-    }
-    const plan = updatePlanStatus(Number(request.params.id), request.body.status);
+    const plan = updatePlanStatus(Number(request.params.id), request.body.status, request.user.id);
     response.json(planForClient(plan));
   } catch (error) {
     response.status(400).json({ error: error.message });
@@ -406,7 +398,7 @@ app.patch("/api/plans/:id/status", (request, response) => {
 
 app.post("/api/plans/:id/approval", requirePermission("canApprovePlans"), (request, response) => {
   try {
-    response.json(planForClient(approvePlan(Number(request.params.id), request.user.id)));
+    response.json(planForClient(approvePlan(Number(request.params.id), request.user.id, request.body?.generation_id)));
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
@@ -423,6 +415,9 @@ app.patch("/api/plans/:id", requirePermission("canEditPlans"), (request, respons
 
 app.post("/api/plans/:id/generations", requirePermission("canEditPlans"), (request, response) => {
   try {
+    if (request.body.status === "Approved" && !request.permissions.canApprovePlans) {
+      return response.status(403).json({ error: "Only an Admin or Supervisor can approve a generation" });
+    }
     const generation = createGeneration(Number(request.params.id), request.body, request.user.id);
     const updatedPlan = planForClient(getPlan(Number(request.params.id)));
     response.status(201).json({ generation: updatedPlan.generations.find((item) => item.id === generation.id), plan: updatedPlan });
@@ -435,9 +430,50 @@ app.patch("/api/generations/:id", requirePermission("canEditPlans"), (request, r
   try {
     const generation = getGeneration(Number(request.params.id));
     if (!generation) return response.status(404).json({ error: "Generation not found" });
+    if (request.body.status === "Approved" && !request.permissions.canApprovePlans && generation.status !== "Approved") {
+      return response.status(403).json({ error: "Only an Admin or Supervisor can approve a generation" });
+    }
     updateGeneration(generation.id, request.body);
     const updatedPlan = planForClient(getPlan(generation.plan_id));
     response.json({ generation: updatedPlan.generations.find((item) => item.id === generation.id), plan: updatedPlan });
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.patch("/api/generations/:id/status", (request, response) => {
+  try {
+    const generation = getGeneration(Number(request.params.id));
+    if (!generation) return response.status(404).json({ error: "Generation not found" });
+    const targetStatus = request.body.status;
+    if (!["WIP", "Approved"].includes(targetStatus)) {
+      return response.status(400).json({ error: "Invalid status. Allowed statuses: WIP, Approved" });
+    }
+    if (targetStatus === "Approved" && !request.permissions.canApprovePlans) {
+      return response.status(403).json({ error: "Only an Admin or Supervisor can approve a generation" });
+    }
+    if (targetStatus === "WIP" && !request.permissions.canManageWorkflow && !request.permissions.canApprovePlans) {
+      return response.status(403).json({ error: "Your role cannot change generation status" });
+    }
+    const updatedPlan = planForClient(updateGenerationStatus(generation.id, targetStatus, request.user.id));
+    response.json({
+      generation: updatedPlan.generations.find((item) => item.id === generation.id),
+      plan: updatedPlan
+    });
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+app.post("/api/generations/:id/approval", requirePermission("canApprovePlans"), (request, response) => {
+  try {
+    const generation = getGeneration(Number(request.params.id));
+    if (!generation) return response.status(404).json({ error: "Generation not found" });
+    const updatedPlan = planForClient(approveGeneration(generation.id, request.user.id));
+    response.json({
+      generation: updatedPlan.generations.find((item) => item.id === generation.id),
+      plan: updatedPlan
+    });
   } catch (error) {
     response.status(400).json({ error: error.message });
   }

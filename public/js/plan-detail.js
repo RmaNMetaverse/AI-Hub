@@ -170,7 +170,8 @@ function openGenerationDetail(id) {
   activeGenerationId = generation.id;
   const output = generation.resources.find((resource) => resource.role === "Output");
   const inputs = generation.resources.filter((resource) => resource.role !== "Output");
-  document.querySelector("#generationModalTitle").textContent = generation.version_label;
+  const isApproved = generation.status === "Approved";
+  document.querySelector("#generationModalTitle").innerHTML = `${escapeHtml(generation.version_label)} <span class="status-pill ml-2 ${isApproved ? 'border-lime-400/25 bg-lime-400/10 text-lime-300' : 'border-amber-400/25 bg-amber-400/10 text-amber-300'}">${escapeHtml(generation.status || 'WIP')}</span>`;
   document.querySelector("#generationDetailBody").innerHTML = `
     <div class="grid min-h-[420px] lg:grid-cols-[minmax(0,1.35fr)_minmax(330px,.65fr)]">
       <div class="min-h-[320px] overflow-hidden bg-black/40">${mediaPreview(output)}</div>
@@ -188,8 +189,17 @@ function openGenerationDetail(id) {
 
   const selectButton = document.querySelector("#selectGenerationButton");
   const editButton = document.querySelector("#editGenerationButton");
+  const approveGenButton = document.querySelector("#approveGenerationButton");
   selectButton.classList.toggle("hidden", !permissions.canEditPlans || generation.id === plan.selected_generation_id);
   editButton.classList.toggle("hidden", !permissions.canEditPlans);
+  if (approveGenButton) {
+    approveGenButton.classList.toggle("hidden", !permissions.canApprovePlans);
+    const textEl = document.querySelector("#approveGenerationButtonText");
+    if (textEl) textEl.textContent = isApproved ? "Mark as WIP" : "Approve generation";
+    approveGenButton.className = `${isApproved ? "ghost-button text-amber-300/90 hover:text-amber-200" : "primary-button"} h-10 px-4 text-xs`;
+    const icon = approveGenButton.querySelector("i");
+    if (icon) icon.setAttribute("data-lucide", isApproved ? "clock" : "circle-check");
+  }
   openModal(generationModal);
   lucide.createIcons();
 }
@@ -207,6 +217,34 @@ async function selectGeneration(id) {
   showToast("Current final version updated");
   setTimeout(() => window.location.reload(), 500);
 }
+
+async function toggleGenerationStatus(id, targetStatus) {
+  const response = await fetch(`/api/generations/${id}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: targetStatus })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) return showToast(payload.error || "Could not update generation status");
+  showToast(targetStatus === "Approved" ? "Generation approved" : "Generation marked as WIP");
+  setTimeout(() => window.location.reload(), 450);
+}
+
+document.querySelector("#approveGenerationButton")?.addEventListener("click", () => {
+  const generation = generationById(activeGenerationId);
+  if (!generation) return;
+  const nextStatus = generation.status === "Approved" ? "WIP" : "Approved";
+  toggleGenerationStatus(generation.id, nextStatus);
+});
+
+document.querySelectorAll(".toggle-generation-status-button").forEach((button) => {
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const id = Number(button.dataset.generationId);
+    const status = button.dataset.status;
+    toggleGenerationStatus(id, status);
+  });
+});
 
 document.querySelectorAll(".select-generation-button").forEach((button) => button.addEventListener("click", () => selectGeneration(button.dataset.generationId)));
 document.querySelector("#selectGenerationButton")?.addEventListener("click", () => selectGeneration(activeGenerationId));
@@ -227,6 +265,7 @@ const editorFields = {
   shot_number: document.querySelector("#generationShotNumberInput"),
   id: document.querySelector("#generationIdInput"),
   version_number: document.querySelector("#generationVersionNumberInput"),
+  status: document.querySelector("#generationStatusInput"),
   model: document.querySelector("#generationModelInput"),
   prompt: document.querySelector("#generationPromptInput"),
   negative_prompt: document.querySelector("#generationNegativePromptInput"),
@@ -328,6 +367,7 @@ function fillEditor(generation = null) {
     editorFields[key].readOnly = Boolean(generation);
   }
   editorFields.version_number.value = generation?.version_number || nextVersion;
+  if (editorFields.status) editorFields.status.value = generation?.status || "WIP";
   renderModelOptions(generation?.model || planModel);
   renderPlatformOptions(generation);
   editorFields.prompt.value = generation?.prompt || plan.prompt || "";
@@ -367,6 +407,7 @@ function generationPayload() {
     sequence_number: Number(editorFields.sequence_number.value),
     shot_number: Number(editorFields.shot_number.value),
     version_number: Number(editorFields.version_number.value),
+    status: editorFields.status?.value || "WIP",
     model: editorFields.model.value,
     prompt: editorFields.prompt.value.trim(),
     negative_prompt: editorFields.negative_prompt.value.trim(),

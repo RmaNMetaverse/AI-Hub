@@ -227,7 +227,7 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   });
   assert.equal(planResponse.status, 201);
   const plan = await planResponse.json();
-  assert.equal(plan.status, "Idea");
+  assert.equal(plan.status, "WIP");
   assert.equal(plan.sequence_number, 99);
   assert.equal(plan.shot_number, 7);
   assert.equal(plan.shot_code, "SQ99-SH007");
@@ -482,7 +482,13 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
     cookie: creatorCookie,
     body: { status: "Approved" }
   });
-  assert.equal(forbiddenApproval.status, 400);
+  assert.equal(forbiddenApproval.status, 403);
+  const forbiddenGenApproval = await request(`/api/generations/${firstGeneration.id}/status`, {
+    method: "PATCH",
+    cookie: creatorCookie,
+    body: { status: "Approved" }
+  });
+  assert.equal(forbiddenGenApproval.status, 403);
   const creatorApproval = await request(`/api/plans/${plan.id}/approval`, { method: "POST", cookie: creatorCookie });
   assert.equal(creatorApproval.status, 403);
   const customRoleApproval = await request(`/api/plans/${plan.id}/approval`, { method: "POST", cookie: assetCookie });
@@ -499,16 +505,32 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(supervisorActivation.status, 200);
   const supervisorCookie = sessionCookie(supervisorActivation);
 
-  const directApproval = await request(`/api/plans/${plan.id}/status`, { method: "PATCH", cookie: supervisorCookie, body: { status: "Approved" } });
-  assert.equal(directApproval.status, 400);
   const prematureDelivery = await request(`/api/plans/${plan.id}/status`, { method: "PATCH", cookie: supervisorCookie, body: { status: "Delivered" } });
   assert.equal(prematureDelivery.status, 400);
+
+  const directApproval = await request(`/api/plans/${plan.id}/status`, { method: "PATCH", cookie: supervisorCookie, body: { status: "Approved" } });
+  assert.equal(directApproval.status, 200);
+  assert.equal((await directApproval.json()).status, "Approved");
+
+  const resetToWip = await request(`/api/plans/${plan.id}/status`, { method: "PATCH", cookie: supervisorCookie, body: { status: "WIP" } });
+  assert.equal(resetToWip.status, 200);
+  assert.equal((await resetToWip.json()).status, "WIP");
+
   const approval = await request(`/api/plans/${plan.id}/approval`, { method: "POST", cookie: supervisorCookie });
   assert.equal(approval.status, 200);
   const approvedPlan = await approval.json();
   assert.equal(approvedPlan.status, "Approved");
   assert.equal(approvedPlan.approval.approved_by_name, "Docker Supervisor");
   assert.equal(approvedPlan.approval.generation_id, firstGeneration.id);
+  assert.equal(approvedPlan.selected_generation.status, "Approved");
+
+  const toggleGenWip = await request(`/api/generations/${firstGeneration.id}/status`, { method: "PATCH", cookie: supervisorCookie, body: { status: "WIP" } });
+  assert.equal(toggleGenWip.status, 200);
+  assert.equal((await toggleGenWip.json()).generation.status, "WIP");
+
+  const toggleGenApprove = await request(`/api/generations/${firstGeneration.id}/approval`, { method: "POST", cookie: supervisorCookie });
+  assert.equal(toggleGenApprove.status, 200);
+  assert.equal((await toggleGenApprove.json()).generation.status, "Approved");
 
   const shotPage = await request(`/plans/${plan.id}`, { cookie: supervisorCookie });
   assert.equal(shotPage.status, 200);

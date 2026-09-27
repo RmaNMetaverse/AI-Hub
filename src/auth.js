@@ -19,7 +19,7 @@ export const ROLE_DEFINITIONS = {
   Supervisor: "Manage production, assign work, and approve final media.",
   Generator: "Create shots, upload assets, and manage generations.",
   Creator: "Create plans, edit creative details, and manage generations.",
-  Reviewer: "Review work, request revisions, and add feedback.",
+  Reviewer: "Review work and add feedback.",
   Viewer: "Read-only access to projects and approved production data."
 };
 
@@ -28,9 +28,9 @@ export function permissionsFor(role) {
   const canManageWorkflow = Boolean(definition?.can_manage_workflow);
   const canReviewPlans = Boolean(definition?.can_review_plans);
   const canApprovePlans = ["Admin", "Supervisor"].includes(role);
-  const allowedStatuses = canManageWorkflow
-    ? ["Idea", "Brief Ready", "Generating", "Review", "Revision", ...(canApprovePlans ? ["Delivered"] : [])]
-    : canReviewPlans ? ["Review", "Revision"] : [];
+  const allowedStatuses = canApprovePlans
+    ? ["WIP", "Approved"]
+    : canManageWorkflow ? ["WIP"] : [];
   return {
     canManageAccounts: Boolean(definition?.can_manage_accounts),
     canCreatePlans: Boolean(definition?.can_create_plans),
