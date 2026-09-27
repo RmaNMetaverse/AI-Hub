@@ -10,9 +10,9 @@ Docker is the standard runtime for AI Hub. Install Docker Desktop, then run:
 docker compose up --build app
 ```
 
-Open `http://localhost:4310`. The development container watches the server, browser JavaScript, templates, and Tailwind styles for changes.
+Open `http://localhost:4310`. The development container watches server modules and Tailwind styles for changes. Refresh the browser after editing browser JavaScript or templates.
 
-The SQLite database is created automatically in the persistent `ai-hub-data` Docker volume. Uploaded media is stored separately in the persistent `ai-hub-media` volume. Fresh installations remain independent; AI Hub only seeds its bundled cinematic UI thumbnail into the new media volume.
+The SQLite database is created automatically in the persistent `ai-hub-data` Docker volume. Uploaded media is stored separately in the persistent `ai-hub-media` volume. Fresh installations remain independent; AI Hub seeds a sample project, shots, generations, catalogs, and its bundled cinematic UI thumbnail.
 
 On a new workspace, sign in with the username `admin`. Because it is the account's first sign-in, AI Hub will ask you to create the Admin password. There is no default password.
 
@@ -39,6 +39,8 @@ The test container uses a temporary SQLite database in memory-backed container s
 GitHub Actions also builds the Docker verification target, runs all checks and tests in that image, and confirms that the production image can be built.
 
 See [`docs/DOCKER.md`](docs/DOCKER.md) for the container architecture and [`docs/STORAGE.md`](docs/STORAGE.md) for media storage, Linux disk configuration, and backup notes.
+
+See [`deploy.md`](deploy.md) for the project structure, Windows test runs, and Ubuntu deployment behind Nginx with HTTPS.
 
 ## Optional host fallback
 

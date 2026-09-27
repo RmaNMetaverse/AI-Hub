@@ -15,8 +15,7 @@ const state = {
   generationCatalogs: window.__AI_HUB_GENERATION_CATALOGS__ || { models: [], platforms: [], resource_roles: [] },
   query: "",
   status: "all",
-  view: "board",
-  activePlan: null
+  view: "board"
 };
 
 const els = {
@@ -27,9 +26,6 @@ const els = {
   stats: document.querySelector("#statsRow"),
   search: document.querySelector("#searchInput"),
   filter: document.querySelector("#statusFilter"),
-  drawer: document.querySelector("#drawer"),
-  drawerPanel: document.querySelector("#drawerPanel"),
-  drawerBackdrop: document.querySelector("#drawerBackdrop"),
   modal: document.querySelector("#newPlanModal"),
   modalCard: document.querySelector("#modalCard"),
   form: document.querySelector("#newPlanForm"),
@@ -84,7 +80,6 @@ function compactCard(plan) {
       <div class="media-frame relative aspect-[16/10] overflow-hidden" style="${mediaStyle(plan)}">
         <div class="absolute inset-x-0 top-0 flex items-start justify-between p-3">
           <span class="status-pill ${statusClass(plan.status)} backdrop-blur-xl">${escapeHtml(plan.status)}</span>
-          <button class="grid h-7 w-7 place-items-center rounded-full bg-black/45 text-zinc-300 opacity-0 backdrop-blur transition group-hover:opacity-100" aria-label="Plan menu"><i data-lucide="ellipsis" class="h-4 w-4"></i></button>
         </div>
         ${plan.issue ? `<div class="absolute bottom-3 left-3 right-3 flex items-center gap-2 rounded-lg border border-orange-300/10 bg-black/55 px-2.5 py-2 text-[10px] text-orange-200/90 backdrop-blur"><i data-lucide="triangle-alert" class="h-3.5 w-3.5 shrink-0"></i><span class="truncate">${escapeHtml(plan.issue)}</span></div>` : ""}
       </div>
@@ -134,7 +129,7 @@ function renderStats() {
   const approved = state.plans.filter((plan) => ["Approved", "Delivered"].includes(plan.status)).length;
   const tests = state.plans.reduce((sum, plan) => sum + Number(plan.experiments_count || 0), 0);
   const stats = [
-    ["Total plans", total, "Across 5 sequences", "clapperboard"],
+    ["Total plans", total, "In this workspace", "clapperboard"],
     ["In creation", active, `${tests} generations logged`, "wand-sparkles"],
     ["Ready to review", review, "Director action needed", "messages-square"],
     ["Approved", approved, `${Math.round((approved / Math.max(total, 1)) * 100)}% of production`, "circle-check"]
@@ -178,8 +173,7 @@ function render() {
 
 function bindPlanEvents() {
   document.querySelectorAll("[data-plan-id]").forEach((element) => {
-    element.addEventListener("click", (event) => {
-      if (event.target.closest("button[aria-label='Plan menu']")) return;
+    element.addEventListener("click", () => {
       openPlan(Number(element.dataset.planId));
     });
     element.addEventListener("keydown", (event) => {
@@ -221,81 +215,11 @@ function allowedStatusesForPlan(plan) {
   return state.permissions.allowedStatuses || [];
 }
 
-async function openPlanDrawerLegacy(id) {
-  const response = await fetch(`/api/plans/${id}`);
-  if (!response.ok) return showToast("Could not load plan");
-  const plan = await response.json();
-  state.activePlan = plan;
-  const score = Math.round(Number(plan.quality || 0) * 20);
-  const generations = plan.generations?.length ? plan.generations : [];
-  const allowedStatuses = allowedStatusesForPlan(plan);
-  const statusControl = allowedStatuses.length
-    ? `<select id="drawerStatus" class="h-9 rounded-full border border-white/10 bg-white/[0.04] px-3 text-xs text-zinc-300 outline-none">${allowedStatuses.map((status) => `<option ${status === plan.status ? "selected" : ""}>${status}</option>`).join("")}</select>`
-    : `<span class="status-pill ${statusClass(plan.status)}">${escapeHtml(plan.status)}</span>`;
-  els.drawerPanel.innerHTML = `
-    <div class="media-frame relative aspect-[16/8]" style="${mediaStyle(plan)}">
-      <div class="absolute inset-0 bg-gradient-to-t from-[#0d0e10] via-black/10 to-black/35"></div>
-      <div class="absolute inset-x-0 top-0 flex items-center justify-between p-5">
-        <span class="status-pill ${statusClass(plan.status)} backdrop-blur-xl">${escapeHtml(plan.status)}</span>
-        <button id="closeDrawerButton" class="icon-button border-white/20 bg-black/35 text-white backdrop-blur" aria-label="Close details"><i data-lucide="x" class="h-4 w-4"></i></button>
-      </div>
-      <div class="absolute inset-x-0 bottom-0 p-6">
-        <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/55">${escapeHtml(plan.shot_code)} · ${escapeHtml(plan.media_type)}</div>
-        <h2 class="mt-2 text-3xl font-semibold tracking-[-0.04em] text-white">${escapeHtml(plan.title)}</h2>
-      </div>
-    </div>
-    <div class="px-6 pb-10">
-      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.08] py-5">
-        <div class="flex items-center gap-3"><div class="grid h-8 w-8 place-items-center rounded-full bg-white/10 text-[10px] font-bold">${escapeHtml(plan.owner.split(" ").map((part) => part[0]).join("").slice(0,2))}</div><div><div class="text-xs font-semibold text-zinc-300">${escapeHtml(plan.owner)}</div><div class="text-[10px] text-zinc-600">Plan owner</div></div></div>
-        ${statusControl}
-      </div>
-      <section class="py-6"><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Creative brief</div><p class="mt-3 text-sm leading-6 text-zinc-300">${escapeHtml(plan.description || "No creative brief yet.")}</p></section>
-      <section class="detail-section grid grid-cols-2 gap-x-5 gap-y-5 sm:grid-cols-4">
-        ${[["Model", plan.model], ["Aspect", plan.aspect_ratio], ["Duration", plan.duration], ["Due", formatDate(plan.due_date)]].map(([label, value]) => `<div><div class="text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-600">${label}</div><div class="mt-1.5 truncate text-xs font-medium text-zinc-300">${escapeHtml(value)}</div></div>`).join("")}
-      </section>
-      <section class="detail-section">
-        <div class="flex items-center justify-between"><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Prompt · Latest version</div><button id="copyPrompt" class="text-[10px] font-semibold text-zinc-500 hover:text-white"><i data-lucide="copy" class="mr-1 inline h-3 w-3"></i>Copy</button></div>
-        <div class="mt-3 rounded-2xl border border-white/[0.08] bg-black/25 p-4 text-[13px] leading-6 text-zinc-400">${escapeHtml(plan.prompt || "No prompt has been added yet.")}</div>
-      </section>
-      <section class="detail-section">
-        <div class="flex items-center justify-between"><div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Quality profile</div><div class="mt-1 text-xs text-zinc-500">Prompt adherence and cinematic usability</div></div><div class="quality-ring grid h-14 w-14 place-items-center rounded-full" style="--score:${score}"><div class="grid h-[46px] w-[46px] place-items-center rounded-full bg-[#0d0e10] text-xs font-bold">${plan.quality ? plan.quality.toFixed(1) : "—"}</div></div></div>
-      </section>
-      <section class="detail-section">
-        <div class="flex items-center justify-between"><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Generations</div><span class="text-[10px] text-zinc-600">${plan.experiments_count} total</span></div>
-        <div class="mt-3 grid grid-cols-2 gap-3">${generations.map((generation, index) => `<div class="rounded-xl border border-white/[0.08] bg-white/[0.025] p-2"><div class="media-frame aspect-video rounded-lg" style="${mediaStyle(plan)};opacity:${index ? ".8" : "1"}"></div><div class="mt-2 flex items-center justify-between"><span class="text-[11px] font-semibold text-zinc-300">${escapeHtml(generation.label)}</span><span class="text-[10px] text-zinc-600">${generation.rating}/5</span></div></div>`).join("") || `<div class="col-span-2 rounded-xl border border-dashed border-white/10 py-8 text-center text-xs text-zinc-600">No generations logged yet</div>`}</div>
-      </section>
-      ${(plan.issue || plan.next_action) ? `<section class="detail-section"><div class="grid gap-3 sm:grid-cols-2">${plan.issue ? `<div class="rounded-xl border border-orange-300/10 bg-orange-300/[0.045] p-3"><div class="text-[9px] font-semibold uppercase tracking-wider text-orange-300/60">Issue</div><div class="mt-1.5 text-xs leading-5 text-orange-100/75">${escapeHtml(plan.issue)}</div></div>` : ""}<div class="rounded-xl border border-white/[0.08] bg-white/[0.025] p-3"><div class="text-[9px] font-semibold uppercase tracking-wider text-zinc-600">Next action</div><div class="mt-1.5 text-xs leading-5 text-zinc-300">${escapeHtml(plan.next_action)}</div></div></div></section>` : ""}
-      <div class="mt-2 flex gap-3">${state.permissions.canApprovePlans ? `<button id="approvePlan" class="primary-button flex-1"><i data-lucide="circle-check" class="h-4 w-4"></i>Approve final</button>` : ""}${state.permissions.canReviewPlans ? `<button class="ghost-button flex-1"><i data-lucide="message-square" class="h-4 w-4"></i>Add review</button>` : ""}</div>
-    </div>`;
-  els.drawer.classList.remove("pointer-events-none");
-  els.drawer.setAttribute("aria-hidden", "false");
-  requestAnimationFrame(() => {
-    els.drawerPanel.classList.add("open");
-    els.drawerBackdrop.classList.remove("opacity-0");
-  });
-  document.body.classList.add("overflow-hidden");
-  document.querySelector("#closeDrawerButton").addEventListener("click", closeDrawer);
-  document.querySelector("#drawerStatus")?.addEventListener("change", (event) => setPlanStatus(plan.id, event.target.value, true));
-  document.querySelector("#approvePlan")?.addEventListener("click", () => setPlanStatus(plan.id, "Approved", true));
-  document.querySelector("#copyPrompt").addEventListener("click", async () => { await navigator.clipboard.writeText(plan.prompt); showToast("Prompt copied"); });
-  lucide.createIcons();
-}
-
-function closeDrawer() {
-  els.drawerPanel.classList.remove("open");
-  els.drawerBackdrop.classList.add("opacity-0");
-  setTimeout(() => {
-    els.drawer.classList.add("pointer-events-none");
-    els.drawer.setAttribute("aria-hidden", "true");
-    document.body.classList.remove("overflow-hidden");
-  }, 320);
-}
-
 function openPlan(id) {
   window.location.assign(`/plans/${id}`);
 }
 
-async function setPlanStatus(id, status, reopen = false) {
+async function setPlanStatus(id, status) {
   const response = await fetch(`/api/plans/${id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
   if (!response.ok) return showToast("Could not update status");
   const updated = await response.json();
@@ -303,7 +227,6 @@ async function setPlanStatus(id, status, reopen = false) {
   state.plans[index] = { ...state.plans[index], ...updated };
   render();
   showToast(`Moved to ${status}`);
-  if (reopen) openPlan(id);
 }
 
 function openModal() {
@@ -331,9 +254,9 @@ function showToast(message) {
 }
 
 document.querySelectorAll(".view-button").forEach((button) => button.addEventListener("click", () => { state.view = button.dataset.view; render(); }));
+document.querySelectorAll("[data-planned-feature]").forEach((button) => button.addEventListener("click", () => showToast(`${button.dataset.plannedFeature} is planned for a future update`)));
 els.search.addEventListener("input", (event) => { state.query = event.target.value; render(); });
 els.filter.addEventListener("change", (event) => { state.status = event.target.value; render(); });
-els.drawerBackdrop?.addEventListener("click", closeDrawer);
 document.querySelector("#newPlanButton")?.addEventListener("click", openModal);
 document.querySelector("#closeModalButton").addEventListener("click", closeModal);
 document.querySelector("#cancelModalButton").addEventListener("click", closeModal);
@@ -592,7 +515,6 @@ document.addEventListener("keydown", (event) => {
     if (catalogsModal && !catalogsModal.classList.contains("hidden")) closeCatalogsModal();
     else if (usersModal && !usersModal.classList.contains("hidden")) closeUsersModal();
     else if (!els.modal.classList.contains("hidden")) closeModal();
-    else if (els.drawer && !els.drawer.classList.contains("pointer-events-none")) closeDrawer();
   }
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); els.search.focus(); }
 });

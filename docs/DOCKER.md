@@ -12,6 +12,8 @@ Docker is AI Hub's primary development and delivery environment. Host-installed 
 
 The production image runs as the unprivileged `node` user and includes a health check. Development dependencies and Tailwind are not copied into its final runtime layer.
 
+Production publishes port 4310 only on `127.0.0.1`. Use host Nginx for public access; see [`deploy.md`](../deploy.md) for Ubuntu and HTTPS setup.
+
 ## Everyday commands
 
 Start development and follow its logs:

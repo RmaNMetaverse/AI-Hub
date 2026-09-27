@@ -59,7 +59,7 @@ services:
       context: .
       target: production
     ports:
-      - "4310:4310"
+      - "127.0.0.1:4310:4310"
     environment:
       NODE_ENV: production
       PORT: 4310

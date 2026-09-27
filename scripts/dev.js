@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+const tailwindCli = fileURLToPath(new URL("../node_modules/tailwindcss/lib/cli.js", import.meta.url));
 const children = new Set();
 let shuttingDown = false;
 
@@ -26,5 +27,5 @@ function shutdown(signal) {
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-start("node", ["--watch", "server.js"]);
-start(npmCommand, ["run", "css:watch"]);
+start(process.execPath, ["--watch", "server.js"]);
+start(process.execPath, [tailwindCli, "-i", "./public/css/input.css", "-o", "./public/css/app.css", "--watch=always", "--poll"]);

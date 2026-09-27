@@ -59,4 +59,4 @@ Docker volumes survive container rebuilds and `docker compose down`, but they do
 
 Stop AI Hub or use a storage-aware snapshot before taking a consistent database backup. Keep at least one encrypted copy on a different physical device or server.
 
-Restoring those two datasets onto a fresh installation deliberately migrates the workspace. Without a restore, every new installation remains independent and empty.
+Restoring those two datasets onto a fresh installation deliberately migrates the workspace. Without a restore, every new installation remains independent and starts with the bundled sample project, shots, generation records, and catalogs.
