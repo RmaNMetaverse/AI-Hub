@@ -63,4 +63,29 @@ test("AI Hub handles BASE_PATH=/AIHub properly", async () => {
   assert.ok(html.includes('src="/AIHub/js/auth.js"'), "Auth script should be prefixed with /AIHub");
   assert.ok(html.includes('window.__AI_HUB_BASE__ = "/AIHub"'), "window.__AI_HUB_BASE__ should be set to /AIHub");
   assert.ok(html.includes('--cinematic-thumbnail: url("/AIHub/storage/thumbnails/cinematic-frames")'), "CSS custom property for thumbnail should be set");
+
+  const activation = await fetch(`${origin}/AIHub/auth/activate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username: "admin", password: "Base-Path-Test-1", confirmation: "Base-Path-Test-1" })
+  });
+  assert.equal(activation.status, 200);
+  const cookie = activation.headers.get("set-cookie")?.split(";", 1)[0];
+  assert.ok(cookie, "Activation should set a session cookie");
+
+  const planResponse = await fetch(`${origin}/AIHub/api/plans`, {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json" },
+    body: JSON.stringify({ sequence_number: 1, shot_number: 1, title: "Base-path upload" })
+  });
+  assert.equal(planResponse.status, 201);
+  const plan = await planResponse.json();
+
+  const upload = new FormData();
+  upload.append("sequence_number", "1");
+  upload.append("shot_number", "1");
+  upload.append("category", "Reference");
+  upload.append("file", new Blob(["upload through base path"], { type: "text/plain" }), "base-path.txt");
+  const uploadResponse = await fetch(`${origin}/AIHub/api/plans/${plan.id}/resources`, { method: "POST", headers: { cookie }, body: upload });
+  assert.equal(uploadResponse.status, 201);
 });

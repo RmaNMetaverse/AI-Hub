@@ -5,6 +5,7 @@ const permissions = window.__AI_HUB_PERMISSIONS__;
 const resourceRoles = window.__AI_HUB_RESOURCE_ROLES__ || [];
 const generationCatalogs = window.__AI_HUB_GENERATION_CATALOGS__ || { models: [], platforms: [], resource_roles: [] };
 const maxUploadBytes = Number(window.__AI_HUB_MAX_UPLOAD_BYTES__);
+const appPath = (path) => `${window.__AI_HUB_BASE__ || ""}${path}`;
 const toast = document.querySelector("#shotToast");
 let activeGenerationId = null;
 let editorResourceLinks = new Map();
@@ -457,7 +458,7 @@ function uploadResource(file, category, notes, onProgress = () => {}, numbers = 
     payload.append("notes", notes);
     payload.append("file", file, file.name);
     const request = new XMLHttpRequest();
-    request.open("POST", `/api/plans/${plan.id}/resources`);
+    request.open("POST", appPath(`/api/plans/${plan.id}/resources`));
     request.responseType = "json";
     request.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable) onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
@@ -578,5 +579,5 @@ document.addEventListener("keydown", (event) => {
 });
 
 const initialTab = window.location.hash.slice(1);
-activateTab(["generations", "resources", "brief", "notes"].includes(initialTab) ? initialTab : "generations", { scroll: false });
+activateTab(["generations", "notes"].includes(initialTab) ? initialTab : "generations", { scroll: false });
 lucide.createIcons();

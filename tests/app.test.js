@@ -266,6 +266,12 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.match(homeHtml, /id="sequenceFilter"/);
   assert.match(homeHtml, /id="shotFilter"/);
   assert.doesNotMatch(homeHtml, /id="boardView"/);
+  const newPlanFormHtml = homeHtml.match(/<form id="newPlanForm"[\s\S]*?<\/form>/)?.[0] || "";
+  assert.match(newPlanFormHtml, /type="datetime-local" name="due_date"/);
+  assert.doesNotMatch(newPlanFormHtml, /name="media_type"/);
+  assert.doesNotMatch(newPlanFormHtml, /name="model"/);
+  assert.doesNotMatch(newPlanFormHtml, /name="description"/);
+  assert.doesNotMatch(newPlanFormHtml, /name="prompt"/);
   for (const key of ["sequence_number", "shot_number"]) {
     const changed = await request(`/api/plans/${plan.id}`, { method: "PATCH", cookie: creatorCookie, body: { [key]: 9 } });
     assert.equal(changed.status, 400);
@@ -548,6 +554,8 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.match(html, /id="sequenceFilter"/);
   assert.match(html, /id="generationSequenceNumberInput"/);
   assert.match(html, /id="generationShotNumberInput"/);
+  assert.doesNotMatch(html, />Shot library/);
+  assert.doesNotMatch(html, />Brief &amp; prompt/);
   const filteredShotPage = await request(`/plans/${plan.id}?sequence_number=99&shot_number=7`, { cookie: supervisorCookie });
   assert.equal(filteredShotPage.status, 200);
   assert.match(await filteredShotPage.text(), /value="99"/);

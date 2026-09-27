@@ -162,12 +162,7 @@
           <label><span class="field-label">#Shot · Plan / Shot number *</span><input name="shot_number" type="number" min="1" max="1000000" step="1" class="field text-2xl" required /></label>
           <p class="text-xs text-zinc-500 sm:col-span-2">Both numbers are required and locked after creation. Every generation and uploaded file belongs to this numbered shot.</p>
           <label class="sm:col-span-2"><span class="field-label">Plan title *</span><input name="title" class="field" placeholder="e.g. Signal discovery" required /></label>
-          <label><span class="field-label">Status</span><select name="status" class="field"><option selected>WIP</option><option>Approved</option></select></label>
-          <label><span class="field-label">Media type</span><select name="media_type" class="field"><option>Video</option><option>Image</option><option>Audio</option><option>Voice</option><option>VFX element</option></select></label>
-          <label><span class="field-label">AI model</span><select name="model" class="field"><option>Not selected</option><% generationCatalogs.models.forEach(model => { %><option><%= model.name %></option><% }) %></select></label>
-          <label><span class="field-label">Due date</span><input type="date" name="due_date" class="field" /></label>
-          <label class="sm:col-span-2"><span class="field-label">Creative brief</span><textarea name="description" class="field min-h-24 resize-y" placeholder="What should this plan achieve in the film?"></textarea></label>
-          <label class="sm:col-span-2"><span class="field-label">Starting prompt</span><textarea name="prompt" class="field min-h-28 resize-y" placeholder="Describe subject, environment, camera, lighting, and movement..."></textarea></label>
+          <label class="sm:col-span-2"><span class="field-label">Due date and time</span><input type="datetime-local" name="due_date" class="field" /></label>
           <div class="flex items-center justify-end gap-3 sm:col-span-2">
             <button type="button" id="cancelModalButton" class="ghost-button">Cancel</button>
             <button type="submit" class="primary-button px-6"><span>Create plan</span><i data-lucide="arrow-right" class="h-4 w-4"></i></button>
