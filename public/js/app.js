@@ -58,7 +58,7 @@ function shotCard(plan) {
   return `
     <article class="plan-card group relative" data-plan-id="${plan.id}">
       <a href="${window.__AI_HUB_BASE__ || ""}/plans/${plan.id}${query ? `?${query}` : ""}" class="block">
-      <div class="media-frame relative aspect-video overflow-hidden" style="--image-position:${escapeHtml(plan.image_position || "0% 0%")}">
+      <div class="relative aspect-video overflow-hidden bg-[#0d0f12]">
         <span class="status-pill absolute left-3 top-3 ${statusClass(plan.status)} backdrop-blur-xl">${escapeHtml(plan.status)}</span>
         ${plan.issue ? `<div class="absolute inset-x-3 bottom-3 rounded-lg bg-black/70 p-2 text-xs text-orange-200">${escapeHtml(plan.issue)}</div>` : ""}
       </div>
