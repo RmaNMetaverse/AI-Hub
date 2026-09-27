@@ -81,9 +81,50 @@ Start AI Hub:
 
 ```bash
 cd /opt/ai-hub
-docker compose up --build -d app
+docker compose --profile production up --build -d production
 curl http://127.0.0.1:4310/health
 ```
+
+### Start automatically at Ubuntu boot
+
+Create a systemd service that starts the production Compose service after Docker:
+
+```bash
+sudo tee /etc/systemd/system/ai-hub.service >/dev/null <<'EOF'
+[Unit]
+Description=AI Hub Docker application
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/ai-hub
+ExecStart=/usr/bin/docker compose --profile production up -d production
+ExecStop=/usr/bin/docker compose --profile production stop production
+RemainAfterExit=yes
+TimeoutStartSec=0
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now ai-hub.service
+sudo systemctl status ai-hub.service
+```
+
+The production container uses Docker's `restart: unless-stopped` policy, so it also comes back if the Docker daemon restarts. Useful service commands:
+
+```bash
+sudo systemctl restart ai-hub.service
+sudo systemctl stop ai-hub.service
+sudo systemctl start ai-hub.service
+docker compose --profile production ps
+docker compose --profile production logs --tail 100 production
+```
+
+If Docker is installed somewhere other than `/usr/bin/docker`, find its path with `command -v docker` and replace `/usr/bin/docker` in the unit file.
 
 Before making the site public, create the first Admin password through an SSH tunnel from your computer:
 
@@ -151,7 +192,7 @@ If your server already hosts other web applications on port 80 (e.g. ComfyFleet 
    ```
    Restart the container so the app mounts its routes and assets under `/AIHub`:
    ```bash
-   docker compose up --build -d app
+   docker compose --profile production up --build -d production
    ```
 
 2. **Create the Nginx snippet `/etc/nginx/snippets/aihub.conf`**:
@@ -214,7 +255,7 @@ You can now open `http://<serverIp>/AIHub` in your browser.
 ```bash
 cd /opt/ai-hub
 git pull
-docker compose up --build -d app
+docker compose --profile production up --build -d production
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -222,8 +263,8 @@ sudo systemctl reload nginx
 Check the app if needed:
 
 ```bash
-docker compose ps
-docker compose logs --tail 100 app
+docker compose --profile production ps
+docker compose --profile production logs --tail 100 production
 curl http://127.0.0.1:4310/health
 ```
 
