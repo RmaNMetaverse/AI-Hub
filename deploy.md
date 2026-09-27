@@ -187,36 +187,40 @@ If your server already hosts other web applications on port 80 (e.g. ComfyFleet 
 
 1. **Set `BASE_PATH` in `.env`**:
    In `/opt/ai-hub/.env`, add:
+   
    ```env
    BASE_PATH=/AIHub
    ```
+   
    Restart the container so the app mounts its routes and assets under `/AIHub`:
+   
    ```bash
    docker compose --profile production up --build -d production
    ```
 
 2. **Create the Nginx snippet `/etc/nginx/snippets/aihub.conf`**:
+   
    ```bash
    sudo tee /etc/nginx/snippets/aihub.conf <<'EOF'
    # /etc/nginx/snippets/aihub.conf
    # Mounts AI Hub under /AIHub/ alongside existing sites.
-
+   
    location = /AIHub {
        return 301 /AIHub/;
    }
-
+   
    location ^~ /AIHub/ {
        # No trailing slash on proxy_pass:
        # the URI is passed untouched because AI Hub is configured with BASE_PATH=/AIHub
        proxy_pass http://127.0.0.1:4310;
-
+   
        proxy_http_version 1.1;
        proxy_set_header Host              $host;
        proxy_set_header X-Real-IP         $remote_addr;
        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
        proxy_set_header X-Forwarded-Proto $scheme;
        proxy_set_header Connection        "";
-
+   
        # Allow large media file streaming and uploads
        client_max_body_size 21g;
        client_body_timeout 3600s;
@@ -230,12 +234,13 @@ If your server already hosts other web applications on port 80 (e.g. ComfyFleet 
 
 3. **Include the snippet in your existing server configuration**:
    Edit your active server block (e.g. `/etc/nginx/sites-enabled/comfyfleet`) and add the include inside the `server { ... }` block:
+   
    ```nginx
    server {
        listen 80 default_server;
        listen [::]:80 default_server;
        server_name _;
-
+   
        include /etc/nginx/snippets/karema.conf;
        include /etc/nginx/snippets/videocomparema.conf;
        include /etc/nginx/snippets/aihub.conf;
@@ -243,6 +248,7 @@ If your server already hosts other web applications on port 80 (e.g. ComfyFleet 
    ```
 
 4. **Test and reload Nginx**:
+   
    ```bash
    sudo nginx -t
    sudo systemctl reload nginx
@@ -250,7 +256,7 @@ If your server already hosts other web applications on port 80 (e.g. ComfyFleet 
 
 You can now open `http://<serverIp>/AIHub` in your browser.
 
-### Every later run
+### Every later run & Update
 
 ```bash
 cd /opt/ai-hub
