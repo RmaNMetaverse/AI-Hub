@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { readdir } from "node:fs/promises";
+import Database from "better-sqlite3";
 
 process.env.NODE_ENV = "test";
 process.env.DB_PATH ||= join(tmpdir(), `ai-hub-test-${process.pid}.db`);
@@ -142,7 +144,8 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
     method: "POST",
     cookie: creatorCookie,
     body: {
-      shot_code: "DCK-001",
+      sequence_number: 99,
+      shot_number: 7,
       title: "Docker integration shot",
       description: "Created by the containerized integration test",
       media_type: "Video",
@@ -152,8 +155,67 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(planResponse.status, 201);
   const plan = await planResponse.json();
   assert.equal(plan.status, "Idea");
+  assert.equal(plan.sequence_number, 99);
+  assert.equal(plan.shot_number, 7);
+  assert.equal(plan.shot_code, "SQ99-SH007");
+
+  for (const numbers of [
+    {}, { sequence_number: 99 }, { shot_number: 7 },
+    { sequence_number: 0, shot_number: 7 }, { sequence_number: 99, shot_number: -1 },
+    { sequence_number: 1.5, shot_number: 7 }, { sequence_number: true, shot_number: 7 },
+    { sequence_number: 99, shot_number: 1_000_001 }
+  ]) {
+    const invalid = await request("/api/plans", { method: "POST", cookie: creatorCookie, body: { title: "Invalid shot", ...numbers } });
+    assert.equal(invalid.status, 400, JSON.stringify(numbers));
+  }
+  const relatedPlans = [];
+  for (const numbers of [{ sequence_number: 99, shot_number: 8 }, { sequence_number: 100, shot_number: 7 }]) {
+    const created = await request("/api/plans", { method: "POST", cookie: creatorCookie, body: { title: "Filter fixture", ...numbers } });
+    assert.equal(created.status, 201);
+    relatedPlans.push(await created.json());
+  }
+  for (const [query, ids] of [
+    ["sequence_number=99", [plan.id, relatedPlans[0].id]],
+    ["shot_number=7", [plan.id, relatedPlans[1].id]],
+    ["sequence_number=99&shot_number=7", [plan.id]],
+    ["sequence_number=999999", []]
+  ]) {
+    const filtered = await request(`/api/plans?${query}`, { cookie: creatorCookie });
+    assert.equal(filtered.status, 200);
+    assert.deepEqual((await filtered.json()).map((item) => item.id).sort(), ids.sort());
+  }
+  assert.equal((await request("/api/plans?shot_number=1.5", { cookie: creatorCookie })).status, 400);
+  assert.equal((await request("/api/plans?sequence_number=-1", { cookie: creatorCookie })).status, 400);
+  const home = await request("/?sequence_number=99", { cookie: creatorCookie });
+  assert.equal(home.status, 200);
+  const homeHtml = await home.text();
+  assert.match(homeHtml, /id="planGrid"/);
+  assert.match(homeHtml, /id="sequenceFilter"/);
+  assert.match(homeHtml, /id="shotFilter"/);
+  assert.doesNotMatch(homeHtml, /id="boardView"/);
+  for (const key of ["sequence_number", "shot_number"]) {
+    const changed = await request(`/api/plans/${plan.id}`, { method: "PATCH", cookie: creatorCookie, body: { [key]: 9 } });
+    assert.equal(changed.status, 400);
+    assert.match((await changed.json()).error, /locked/);
+  }
+
+  // A rejected upload must leave no file behind, even when multipart fields follow the file.
+  const mediaFiles = async () => (await readdir(process.env.MEDIA_ROOT, { recursive: true, withFileTypes: true }))
+    .filter((entry) => entry.isFile()).map((entry) => join(entry.parentPath, entry.name)).sort();
+  const mediaBefore = await mediaFiles();
+  for (const numbers of [{}, { sequence_number: 98, shot_number: 7 }]) {
+    const invalidForm = new FormData();
+    invalidForm.append("file", new Blob(["rejected upload"]), "rejected.txt");
+    for (const [key, value] of Object.entries(numbers)) invalidForm.append(key, value);
+    const invalid = await fetch(`${origin}/api/plans/${plan.id}/resources`, { method: "POST", headers: { cookie: creatorCookie }, body: invalidForm });
+    assert.equal(invalid.status, 400);
+    assert.match((await invalid.json()).error, /#Seq|#Shot/);
+  }
+  assert.deepEqual(await mediaFiles(), mediaBefore);
 
   const resourceForm = new FormData();
+  resourceForm.append("sequence_number", plan.sequence_number);
+  resourceForm.append("shot_number", plan.shot_number);
   resourceForm.append("category", "Reference");
   resourceForm.append("notes", "Containerized upload fixture");
   const resourceBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 65, 73, 72, 85, 66]);
@@ -188,6 +250,8 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.deepEqual(new Uint8Array(await resourceRange.arrayBuffer()), resourceBytes.slice(0, 4));
 
   const outputForm = new FormData();
+  outputForm.append("sequence_number", plan.sequence_number);
+  outputForm.append("shot_number", plan.shot_number);
   outputForm.append("category", "Generation");
   outputForm.append("notes", "Primary generated output");
   const outputBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 79, 85, 84, 80, 85, 84]);
@@ -204,6 +268,8 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
     method: "POST",
     cookie: creatorCookie,
     body: {
+      sequence_number: plan.sequence_number,
+      shot_number: plan.shot_number,
       version_number: 1,
       model: "Seedance 2.5",
       prompt: "A precise test generation prompt",
@@ -221,6 +287,8 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(firstGenerationResponse.status, 201);
   const firstGeneration = (await firstGenerationResponse.json()).generation;
   assert.equal(firstGeneration.version_label, "v1");
+  assert.equal(firstGeneration.sequence_number, 99);
+  assert.equal(firstGeneration.shot_number, 7);
   assert.equal(firstGeneration.label, "v1");
   assert.equal(firstGeneration.generation_cost, 3);
   assert.equal(firstGeneration.total_tokens, 12);
@@ -232,10 +300,22 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   const duplicateVersionResponse = await request(`/api/plans/${plan.id}/generations`, {
     method: "POST",
     cookie: creatorCookie,
-    body: { version_number: 1, model: "Seedance 2.0", platform_id: higgsfield.id, token_count: 1 }
+    body: { sequence_number: 99, shot_number: 7, version_number: 1, model: "Seedance 2.0", platform_id: higgsfield.id, token_count: 1 }
   });
   assert.equal(duplicateVersionResponse.status, 400);
   assert.match((await duplicateVersionResponse.json()).error, /v1 already exists/);
+  for (const numbers of [{}, { sequence_number: 99 }, { sequence_number: 99, shot_number: 8 }, { sequence_number: 99, shot_number: 1.5 }]) {
+    const invalid = await request(`/api/plans/${plan.id}/generations`, {
+      method: "POST", cookie: creatorCookie,
+      body: { version_number: 2, model: "Seedance 2.0", platform_id: higgsfield.id, ...numbers }
+    });
+    assert.equal(invalid.status, 400);
+  }
+  for (const body of [{ sequence_number: 100 }, { shot_number: 8 }, { plan_id: relatedPlans[0].id }]) {
+    const invalid = await request(`/api/generations/${firstGeneration.id}`, { method: "PATCH", cookie: creatorCookie, body });
+    assert.equal(invalid.status, 400);
+    assert.match((await invalid.json()).error, /locked/);
+  }
 
   const newPriceResponse = await request(`/api/admin/catalogs/platforms/${higgsfield.id}`, {
     method: "PATCH",
@@ -256,6 +336,8 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
     method: "POST",
     cookie: creatorCookie,
     body: {
+      sequence_number: plan.sequence_number,
+      shot_number: plan.shot_number,
       version_number: 2,
       model: "Seedance 2.0",
       prompt: "A revised test generation prompt",
@@ -360,6 +442,28 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.match(html, /generation-output\.png/);
   assert.match(html, /reference-frame\.png/);
   assert.match(html, /\/js\/plan-detail\.js/);
+  assert.match(html, /id="sequenceFilter"/);
+  assert.match(html, /id="generationSequenceNumberInput"/);
+  assert.match(html, /id="generationShotNumberInput"/);
+  const filteredShotPage = await request(`/plans/${plan.id}?sequence_number=99&shot_number=7`, { cookie: supervisorCookie });
+  assert.equal(filteredShotPage.status, 200);
+  assert.match(await filteredShotPage.text(), /value="99"/);
+
+  // Sort by generation creation time, never by workflow or upload edits.
+  const auditDb = new Database(process.env.DB_PATH);
+  try {
+    auditDb.prepare("UPDATE ai_plans SET created_at = ?, updated_at = ? WHERE id = ?").run("2020-01-01 00:00:00", "2099-01-01 00:00:00", relatedPlans[0].id);
+    auditDb.prepare("UPDATE generations SET created_at = ? WHERE plan_id = ?").run("2021-01-01 00:00:00", plan.id);
+    const sorted = await request("/api/plans?sequence_number=99", { cookie: creatorCookie });
+    const rows = await sorted.json();
+    assert.deepEqual(rows.map((item) => item.id), [plan.id, relatedPlans[0].id]);
+    assert.equal(rows[0].generated_at, "2021-01-01 00:00:00");
+    assert.equal(rows[1].generated_at, null);
+    const edit = await request(`/api/plans/${relatedPlans[0].id}`, { method: "PATCH", cookie: creatorCookie, body: { description: "Edited after generation" } });
+    assert.equal(edit.status, 200);
+    const sortedAgain = await request("/api/plans?sequence_number=99", { cookie: creatorCookie });
+    assert.deepEqual((await sortedAgain.json()).map((item) => item.id), [plan.id, relatedPlans[0].id]);
+  } finally { auditDb.close(); }
 
   const resourceDelete = await request(`/api/resources/${resource.id}`, {
     method: "DELETE",

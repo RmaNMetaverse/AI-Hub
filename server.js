@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { promises as fsp } from "node:fs";
 import { fileURLToPath } from "node:url";
 import express from "express";
+import { matchingShotNumbers, shotFilters } from "./src/shot-numbers.js";
 import {
   createAccount,
   createCatalogItem,
@@ -221,6 +222,8 @@ app.get("/storage/thumbnails/cinematic-frames", (request, response) => {
 });
 
 app.get("/", (request, response) => {
+  let numberFilters;
+  try { numberFilters = shotFilters(request.query); } catch (error) { return response.status(400).send(error.message); }
   const dashboard = getDashboard();
   const generationCatalogs = getGenerationCatalogs();
   response.render("index", {
@@ -229,6 +232,7 @@ app.get("/", (request, response) => {
     permissions: request.permissions,
     roleDefinitions: ROLE_DEFINITIONS,
     generationCatalogs,
+    numberFilters,
     serializedPlans: JSON.stringify(dashboard.plans).replaceAll("<", "\\u003c"),
     serializedUser: JSON.stringify(request.user).replaceAll("<", "\\u003c"),
     serializedPermissions: JSON.stringify(request.permissions).replaceAll("<", "\\u003c")
@@ -247,10 +251,12 @@ app.get("/plans/:id", (request, response) => {
   if (!plan) return response.status(404).send("Shot not found");
   const displayPlan = planForClient(plan);
   const dashboard = getDashboard();
-  const orderedPlans = [...dashboard.plans].sort((first, second) => first.shot_code.localeCompare(second.shot_code, undefined, { numeric: true }));
+  let numberFilters;
+  try { numberFilters = shotFilters(request.query); } catch (error) { return response.status(400).send(error.message); }
+  const orderedPlans = getDashboard(numberFilters).plans;
   const planIndex = orderedPlans.findIndex((item) => item.id === plan.id);
   const previousPlan = planIndex > 0 ? orderedPlans[planIndex - 1] : null;
-  const nextPlan = planIndex < orderedPlans.length - 1 ? orderedPlans[planIndex + 1] : null;
+  const nextPlan = planIndex >= 0 && planIndex < orderedPlans.length - 1 ? orderedPlans[planIndex + 1] : null;
   const allowedStatuses = allowedStatusesForPlan(request.user, request.permissions, plan);
   const generationCatalogs = getGenerationCatalogs();
 
@@ -264,12 +270,20 @@ app.get("/plans/:id", (request, response) => {
     allowedStatuses,
     resourceCategories,
     generationCatalogs,
+    numberFilters,
+    filterQuery: new URLSearchParams(numberFilters).toString(),
+    serializedNavigationPlans: JSON.stringify(dashboard.plans.map(({ id, title, sequence_number, shot_number }) => ({ id, title, sequence_number, shot_number }))).replaceAll("<", "\\u003c"),
     generationResourceRoles: generationCatalogs.resource_roles.map((item) => item.name),
     maxUploadBytes,
     serializedPlan: JSON.stringify(displayPlan).replaceAll("<", "\\u003c"),
     serializedUser: JSON.stringify(request.user).replaceAll("<", "\\u003c"),
     serializedPermissions: JSON.stringify(request.permissions).replaceAll("<", "\\u003c")
   });
+});
+
+app.get("/api/plans", (request, response) => {
+  try { response.json(getDashboard(request.query).plans); }
+  catch (error) { response.status(400).json({ error: error.message }); }
 });
 
 app.get("/api/plans/:id", (request, response) => {
@@ -376,6 +390,11 @@ app.post("/api/plans/:id/resources", requirePermission("canEditPlans"), (request
       }
       if (!request.file) return response.status(400).json({ error: "Choose a file to upload" });
       storageKey = storageKeyForFile(request.file.path);
+      try { matchingShotNumbers(plan, request.body); }
+      catch (error) {
+        await removeStoredFile(storageKey);
+        return response.status(400).json({ error: error.message });
+      }
       if (!request.file.size) {
         await removeStoredFile(storageKey);
         return response.status(400).json({ error: "Empty files cannot be uploaded" });

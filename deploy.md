@@ -14,18 +14,21 @@ Fresh databases automatically get the `admin` account, model/platform/resource c
 | --- | --- |
 | `server.js` | Express startup, page routes, authentication endpoints, plan/generation/account/catalog APIs, uploads, private file streaming, and `/health`. Listens on port 4310 by default. |
 | `src/db.js` | SQLite schema initialization and migrations, initial sample data, queries, validation, and persistence. Historical generation model/platform/resource names and prices are stored as snapshots. |
+| `src/shot-numbers.js` | Positive integer number validation, combined filters, legacy number migration, and database triggers that lock shot/generation identities. |
 | `src/auth.js` | Password hashing, sessions, cookie handling, and permissions for Admin, Supervisor, Creator, Reviewer, and Viewer. Sessions last 12 hours. |
 | `src/storage.js` | Filesystem storage, Multer uploads, file classification, SHA-256 checksums, protected thumbnail initialization, and safe download names. |
-| `views/index.ejs` | Production board, gallery/list views, plan creation, and Admin account/catalog dialogs. |
+| `views/index.ejs` | Flat shot grid sorted by generation date, numbered plan creation, and Admin account/catalog dialogs. |
 | `views/plan.ejs` | Full shot workspace: generations, file library, brief/prompt, notes, workflow, and generation editor. |
 | `views/login.ejs` | Username lookup, first-login password setup, and sign-in. |
-| `public/js/` | Browser interactions for board (`app.js`), shot pages (`plan-detail.js`), and login (`auth.js`). |
+| `views/partials/shot-navigation.ejs`, `public/js/shot-navigation.js` | Shared #Seq/#Shot fields, live matching, shareable filter URLs, and navigation between the grid and shot sections. |
+| `public/js/` | Browser interactions for the grid (`app.js`), shot pages (`plan-detail.js`), and login (`auth.js`). |
 | `public/css/input.css`, `tailwind.config.js` | Styles and Tailwind configuration. `public/css/app.css` is generated and ignored by Git. |
 | `assets/` | Bundled seed artwork included in Docker images. |
 | `data/`, `storage/` | Default host database and media locations. Both are ignored by Git and excluded from Docker images. |
 | `scripts/dev.js` | Server watcher and Tailwind watcher, on Windows or Linux. Refresh the browser to see changes. |
 | `scripts/container-dev.js` | Development container launcher; refreshes mounted dependencies when the lockfile changes. |
 | `tests/app.test.js` | HTTP integration test covering authentication, roles, plans, generations, catalogs, uploads, streaming, and deletion. Uses isolated temporary data by default. |
+| `tests/shot-numbers.test.js` | Legacy number migration, repeat-start safety, numeric validation, preserved media links, and database identity enforcement. |
 | `Dockerfile` | Development, verification, builder, and production stages. Uses Node 22; production runs as the unprivileged `node` user with prebuilt CSS. |
 | `compose.yaml` | Live development (`app`), disposable checks/tests (`check`, `test`), and production (`production`). |
 | `.github/workflows/docker-ci.yml` | Builds verification image, runs checks/tests, and builds production image. |
@@ -35,13 +38,25 @@ Request flow: browser → Express route → auth/permission check → SQLite and
 
 The unfinished Scenes, global Media library, Continuity kit, card menus, and obsolete drawer/review controls have been removed. Prompt Library, Activity, and Notifications are retained for the planned overhaul; clicking them displays a planned-feature notice. Their actual workflows are not implemented yet. The per-shot library and generation editor remain available.
 
+## Shot numbering and navigation
+
+The home page shows all plans/shots in one grid. Cards are ordered by their latest generation's creation time, newest first; shots without generations use their own creation time. A status change, brief edit, or file upload does not change that ordering. Generation versions stay inside each shot's dedicated workspace.
+
+The large **#Seq** and **#Shot** fields are shared by the grid and every tab of the shot workspace. Empty fields mean all numbers. Either field filters independently; filling both combines the filters. Grid filtering happens immediately and combines with text search and status. Shot pages show matching shot links immediately and offer **View grid**. Number filters are kept in the URL, including links back to the grid and between shots.
+
+New plans require both numbers as whole numbers from 1 to 1,000,000. The shot code is generated from them, such as `SQ02-SH018`. A plan's numbers are permanent. Each new generation and upload must submit both numbers matching its parent shot; generations store immutable numeric snapshots. The editor pre-fills these numbers from the shot, and saved generations show them as read-only. Library uploads display the locked shot numbers. Saving with missing, invalid, or mismatched numbers returns an error; rejected uploads are removed from disk.
+
+Existing databases migrate automatically on startup. Sequence numbers come from the existing sequence name first, then recognizable legacy codes; shot numbers come from `SH` digits in the existing code. Unrecognized shot codes receive the first unused positive number in their sequence. Existing numeric identities, IDs, legacy codes, generation history, and media links are preserved. Review migrated numbers against your production naming conventions after the update. Legacy duplicate number pairs remain accessible; filters can show multiple cards for the same pair.
+
+For API clients, `POST /api/plans`, `POST /api/plans/:id/generations`, and multipart `POST /api/plans/:id/resources` require `sequence_number` and `shot_number`. `GET /api/plans?sequence_number=2&shot_number=18` lists matching shots in generation-date order; either query parameter can be omitted. Changing a saved plan's or generation's numbers, or moving a generation to another plan, is rejected.
+
 ## Database and media storage decision
 
 Keep **SQLite in WAL mode and filesystem media storage** for the current deployment: one Node process, one Ubuntu server, and a collaborative production workspace. The database stores relatively small metadata records; large media files are streamed to disk and do not inflate SQLite. This assessment is based on the code and deployment topology, not a measured production concurrency target.
 
 SQLite already provides transactions, foreign keys, and indexes. WAL allows readers alongside a writer, but only one write transaction runs at a time. The app's writes are short metadata changes, so there is no demonstrated requirement for a separate database service. Keep the database on local disk, not NFS/SMB. See SQLite's guidance on [appropriate uses](https://sqlite.org/whentouse.html) and [WAL constraints](https://sqlite.org/wal.html).
 
-Reassess **PostgreSQL** if you introduce multiple application servers or generation workers writing concurrently, require database replication/high availability, or observe sustained write contention under a representative workload. More projects, Prompt Library, Activity, and Notifications alone do not require a database migration. At larger record counts, the current unpaginated board and generation queries also need pagination; replacing the database would not remove that UI/query cost.
+Reassess **PostgreSQL** if you introduce multiple application servers or generation workers writing concurrently, require database replication/high availability, or observe sustained write contention under a representative workload. More projects, Prompt Library, Activity, and Notifications alone do not require a database migration. At larger record counts, the current unpaginated grid and generation queries also need pagination; replacing the database would not remove that UI/query cost.
 
 Filesystem storage fits a single server: the existing implementation streams uploads/downloads, supports byte ranges, checksums files, and keeps uploads outside the image in persistent storage. Capacity depends on the provisioned disk and media usage, rather than the choice of metadata database. Back up the media and database together, keep an off-server copy, and monitor free disk space.
 
@@ -247,11 +262,11 @@ The current Express code does not enable `trust proxy`, so login rate limits see
 
 After login:
 
-1. Switch between Board, Gallery, and List; search for a shot and filter by status.
-2. Create a uniquely named plan and open its dedicated shot page.
+1. Confirm the flat grid is newest-generation first. Filter by #Seq alone, #Shot alone, and both together; combine with text search or status.
+2. Create a uniquely named plan with both required numbers and open its dedicated shot page. Confirm the shared number navigation works in all tabs.
 3. Upload a small image to Shot library; open and download it.
-4. Add a generation, link that image as Output, record its prompt/model/platform/token count, then save and reopen its details.
-5. Set that generation as the current final. As Admin or Supervisor, approve it and confirm its updated status on the board.
+4. Add a generation with numbers matching the shot, link that image as Output, record its prompt/model/platform/token count, then save and reopen its details. Confirm its numbers are locked.
+5. Set that generation as the current final. As Admin or Supervisor, approve it and confirm its updated status on the grid.
 6. Verify Accounts and Generation settings as Admin; verify a Viewer has read-only access.
 7. Sign out and confirm protected pages/files require sign-in.
 
@@ -321,4 +336,4 @@ Keep `.env`, the database volume, and `/srv/ai-hub/storage` in place. For stoppi
 
 Proxy/upload settings follow the [Nginx proxy module](https://nginx.org/en/docs/http/ngx_http_proxy_module.html) and [HTTP core module](https://nginx.org/en/docs/http/ngx_http_core_module.html). Production's loopback binding follows [Docker port publishing](https://docs.docker.com/engine/network/port-publishing/).
 
-Local validation for this edit: Windows Node 24.12.0, locked dependency installation, JavaScript checks, HTTP integration tests, CSS build, Windows watcher startup, Compose configuration parsing, and browser checks of sign-in, board views/search, Admin dialogs, shot navigation, the generation editor, and restored Prompt Library/Activity/Notifications notices. The production image continues to target Node 22. Docker/Ubuntu/Nginx commands are provided for deployment; they were not executed against an Ubuntu server during this edit. The Docker build was attempted again after Desktop was opened, but its API returned HTTP 500; Desktop reported the Engine stopped, and startup logs showed virtualization unavailable (`HCS_E_HYPERV_NOT_INSTALLED`). Container builds/tests remain unverified.
+Validation for the numbering overhaul: Windows JavaScript checks and all three tests passed; Docker's Node 22 verification image passed the same HTTP integration, migration, and numeric-validation tests. The production Docker image was built and run with an isolated database/media directory. Browser verification covered independent and combined number filters, filter URL reloads, required plan numbers, mismatched generation rejection, output upload, generation saving, read-only saved numbers, and navigation back to the filtered grid. No browser console errors were reported. These checks used disposable test data; no Ubuntu server or Nginx deployment was changed.

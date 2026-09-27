@@ -50,12 +50,13 @@ The Docker workflow remains the source of truth for checks, tests, and productio
 
 ## Current features
 
-- Cinematic board, gallery, and list views
+- One flat grid of all shots, newest generation first (creation date for ungenerated shots)
+- Prominent #Seq and #Shot number filters across the grid and shot workspace; either or both can be used
 - Dedicated full-page workspace and URL for every shot
 - Previous and next shot navigation
-- Search and status filtering
-- Persistent AI Plan creation
-- Drag plans between workflow stages
+- Search and status filtering combined with the number filters
+- Persistent AI Plan creation with mandatory positive #Seq and #Shot numbers
+- Immutable shot numbers on plans and generations; uploads must match their shot
 - Full-page shot workspace with brief, prompt, quality, generations, issues, and next action
 - Selected-generation final preview with image, video, audio, or file output
 - Numeric generation versions (`v1`, `v2`, …) with exact prompts, model snapshots, notes, seed, platform, token usage, and frozen cost estimates
@@ -67,7 +68,7 @@ The Docker workflow remains the source of truth for checks, tests, and productio
 - Drag-and-drop multi-file uploads with progress and configurable 20 GiB per-file limit
 - Private streamed downloads and byte-range video/audio playback
 - SHA-256 integrity checks and persistent Docker media storage
-- Storage-backed, authenticated thumbnails for boards and shot pages
+- Storage-backed, authenticated thumbnails for the grid and shot pages
 - Status and final-approval updates
 - Local SQLite persistence
 - Protected sign-in and 12-hour local sessions

@@ -1,12 +1,5 @@
 /* global lucide */
 
-const statusGroups = [
-  { key: "Briefing", statuses: ["Idea", "Brief Ready"], target: "Brief Ready", label: "Briefing", dot: "bg-zinc-500" },
-  { key: "Creating", statuses: ["Generating", "Revision"], target: "Generating", label: "Creating", dot: "bg-amber-400" },
-  { key: "Review", statuses: ["Review"], target: "Review", label: "Review", dot: "bg-sky-400" },
-  { key: "Approved", statuses: ["Approved", "Delivered"], target: "Approved", label: "Approved", dot: "bg-acid" }
-];
-
 const state = {
   plans: window.__AI_HUB_PLANS__ || [],
   currentUser: window.__AI_HUB_CURRENT_USER__ || null,
@@ -14,14 +7,12 @@ const state = {
   roleDefinitions: window.__AI_HUB_ROLES__ || {},
   generationCatalogs: window.__AI_HUB_GENERATION_CATALOGS__ || { models: [], platforms: [], resource_roles: [] },
   query: "",
-  status: "all",
-  view: "board"
+  status: "all"
 };
 
 const els = {
-  board: document.querySelector("#boardView"),
-  gallery: document.querySelector("#galleryView"),
-  table: document.querySelector("#tableView"),
+  grid: document.querySelector("#planGrid"),
+  count: document.querySelector("#shotResultCount"),
   empty: document.querySelector("#emptyState"),
   stats: document.querySelector("#statsRow"),
   search: document.querySelector("#searchInput"),
@@ -38,12 +29,6 @@ function escapeHtml(value = "") {
   })[character]);
 }
 
-function formatDate(value) {
-  if (!value) return "No date";
-  const date = new Date(`${value}T12:00:00`);
-  return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(date);
-}
-
 function statusClass(status) {
   const classes = {
     "Idea": "border-zinc-700/70 bg-zinc-800/60 text-zinc-400",
@@ -57,69 +42,37 @@ function statusClass(status) {
   return classes[status] || classes.Idea;
 }
 
-function priorityClass(priority) {
-  return priority === "Critical" ? "text-red-300" : priority === "High" ? "text-amber-300" : "text-zinc-500";
-}
 
 function filteredPlans() {
   const query = state.query.toLowerCase().trim();
   return state.plans.filter((plan) => {
     const matchesStatus = state.status === "all" || plan.status === state.status;
     const haystack = [plan.title, plan.shot_code, plan.model, plan.owner, ...(plan.tags || [])].join(" ").toLowerCase();
-    return matchesStatus && (!query || haystack.includes(query));
-  });
+    return window.shotNavigation.matches(plan) && matchesStatus && (!query || haystack.includes(query));
+  }).sort((a, b) => b.sort_at.localeCompare(a.sort_at) || b.id - a.id);
 }
 
-function mediaStyle(plan) {
-  return `--image-position:${escapeHtml(plan.image_position || "0% 0%")}`;
+function generationDate(value) {
+  const date = new Date(value.replace(" ", "T") + "Z");
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
-function compactCard(plan) {
+function shotCard(plan) {
+  const query = window.shotNavigation.query();
   return `
-    <article class="plan-card group" tabindex="0" role="button" draggable="${Boolean(state.permissions.canManageWorkflow && !(["Approved", "Delivered"].includes(plan.status) && state.currentUser.role === "Creator"))}" data-plan-id="${plan.id}" aria-label="Open ${escapeHtml(plan.title)}">
-      <div class="media-frame relative aspect-[16/10] overflow-hidden" style="${mediaStyle(plan)}">
-        <div class="absolute inset-x-0 top-0 flex items-start justify-between p-3">
-          <span class="status-pill ${statusClass(plan.status)} backdrop-blur-xl">${escapeHtml(plan.status)}</span>
-        </div>
-        ${plan.issue ? `<div class="absolute bottom-3 left-3 right-3 flex items-center gap-2 rounded-lg border border-orange-300/10 bg-black/55 px-2.5 py-2 text-[10px] text-orange-200/90 backdrop-blur"><i data-lucide="triangle-alert" class="h-3.5 w-3.5 shrink-0"></i><span class="truncate">${escapeHtml(plan.issue)}</span></div>` : ""}
+    <a href="/plans/${plan.id}${query ? `?${query}` : ""}" class="plan-card group block" data-plan-id="${plan.id}">
+      <div class="media-frame relative aspect-video overflow-hidden" style="--image-position:${escapeHtml(plan.image_position || "0% 0%")}">
+        <span class="status-pill absolute left-3 top-3 ${statusClass(plan.status)} backdrop-blur-xl">${escapeHtml(plan.status)}</span>
+        ${plan.issue ? `<div class="absolute inset-x-3 bottom-3 rounded-lg bg-black/70 p-2 text-xs text-orange-200">${escapeHtml(plan.issue)}</div>` : ""}
       </div>
       <div class="p-4">
-        <div class="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.1em] text-zinc-600"><span>${escapeHtml(plan.shot_code)}</span><span class="${priorityClass(plan.priority)}">${escapeHtml(plan.priority)}</span></div>
-        <h3 class="mt-2 truncate text-[15px] font-semibold tracking-[-0.01em] text-zinc-100">${escapeHtml(plan.title)}</h3>
-        <p class="mt-1.5 line-clamp-2 min-h-9 text-xs leading-[18px] text-zinc-500">${escapeHtml(plan.description)}</p>
-        <div class="mt-4 flex items-center justify-between border-t border-white/[0.07] pt-3 text-[11px] text-zinc-600">
-          <span class="flex min-w-0 items-center gap-1.5"><i data-lucide="sparkles" class="h-3.5 w-3.5 shrink-0"></i><span class="truncate">${escapeHtml(plan.model)}</span></span>
-          <span class="ml-2 flex shrink-0 items-center gap-1.5"><i data-lucide="layers-3" class="h-3.5 w-3.5"></i>${plan.experiments_count}</span>
-        </div>
+        <div class="flex flex-wrap gap-2 text-sm font-semibold text-acid"><span>#Seq ${plan.sequence_number}</span><span class="text-zinc-600">/</span><span>#Shot ${plan.shot_number}</span></div>
+        <h2 class="mt-2 truncate text-lg font-semibold text-zinc-100">${escapeHtml(plan.title)}</h2>
+        <p class="mt-1 line-clamp-2 min-h-9 text-xs leading-[18px] text-zinc-500">${escapeHtml(plan.description)}</p>
+        <div class="mt-4 flex items-center justify-between gap-2 border-t border-white/[0.07] pt-3 text-xs text-zinc-500"><span class="truncate">${escapeHtml(plan.model)}</span><span class="shrink-0">${plan.generation_count} generations</span></div>
+        <div class="mt-2 text-[11px] text-zinc-600">${plan.generated_at ? "Generated" : "Created"} ${escapeHtml(generationDate(plan.sort_at))}</div>
       </div>
-    </article>`;
-}
-
-function galleryCard(plan) {
-  return `
-    <article class="plan-card group" tabindex="0" role="button" data-plan-id="${plan.id}">
-      <div class="media-frame relative aspect-video" style="${mediaStyle(plan)}">
-        <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/10"></div>
-        <div class="absolute inset-x-0 bottom-0 p-4">
-          <div class="mb-2 flex items-center gap-2"><span class="status-pill ${statusClass(plan.status)} backdrop-blur-xl">${escapeHtml(plan.status)}</span><span class="text-[10px] font-semibold tracking-[0.1em] text-white/55">${escapeHtml(plan.shot_code)}</span></div>
-          <h3 class="text-lg font-semibold tracking-tight text-white">${escapeHtml(plan.title)}</h3>
-          <div class="mt-1.5 flex gap-3 text-[11px] text-white/55"><span>${escapeHtml(plan.model)}</span><span>${plan.experiments_count} tests</span><span>${plan.quality ? `${plan.quality}/5` : "Unrated"}</span></div>
-        </div>
-      </div>
-    </article>`;
-}
-
-function tableMarkup(plans) {
-  const rows = plans.map((plan) => `
-    <button class="grid w-full grid-cols-[64px_minmax(220px,1.6fr)_140px_140px_100px_90px] items-center gap-4 border-t border-white/[0.06] px-4 py-3 text-left transition hover:bg-white/[0.035]" data-plan-id="${plan.id}">
-      <span class="media-frame aspect-video rounded-lg" style="${mediaStyle(plan)}"></span>
-      <span class="min-w-0"><span class="block truncate text-sm font-semibold text-zinc-200">${escapeHtml(plan.title)}</span><span class="mt-1 block text-[10px] font-semibold tracking-wider text-zinc-600">${escapeHtml(plan.shot_code)}</span></span>
-      <span class="status-pill w-max ${statusClass(plan.status)}">${escapeHtml(plan.status)}</span>
-      <span class="truncate text-xs text-zinc-500">${escapeHtml(plan.model)}</span>
-      <span class="text-xs text-zinc-500">${plan.quality ? `${plan.quality}/5` : "—"}</span>
-      <span class="text-xs text-zinc-500">${formatDate(plan.due_date)}</span>
-    </button>`).join("");
-  return `<div class="min-w-[860px]"><div class="grid grid-cols-[64px_minmax(220px,1.6fr)_140px_140px_100px_90px] gap-4 px-4 py-3 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-700"><span>Media</span><span>Plan</span><span>Status</span><span>Model</span><span>Quality</span><span>Due</span></div>${rows}</div>`;
+    </a>`;
 }
 
 function renderStats() {
@@ -127,7 +80,7 @@ function renderStats() {
   const active = state.plans.filter((plan) => ["Generating", "Revision"].includes(plan.status)).length;
   const review = state.plans.filter((plan) => plan.status === "Review").length;
   const approved = state.plans.filter((plan) => ["Approved", "Delivered"].includes(plan.status)).length;
-  const tests = state.plans.reduce((sum, plan) => sum + Number(plan.experiments_count || 0), 0);
+  const tests = state.plans.reduce((sum, plan) => sum + Number(plan.generation_count || 0), 0);
   const stats = [
     ["Total plans", total, "In this workspace", "clapperboard"],
     ["In creation", active, `${tests} generations logged`, "wand-sparkles"],
@@ -142,94 +95,26 @@ function renderStats() {
     </div>`).join("");
 }
 
+
 function render() {
   const plans = filteredPlans();
   renderStats();
-
-  els.board.innerHTML = statusGroups.map((group) => {
-    const items = plans.filter((plan) => group.statuses.includes(plan.status));
-    return `
-      <div class="board-column min-w-0 rounded-2xl border border-transparent p-1 transition" data-column="${group.key}">
-        <div class="mb-3 flex items-center justify-between px-2">
-          <div class="flex items-center gap-2 text-xs font-semibold text-zinc-400"><span class="h-1.5 w-1.5 rounded-full ${group.dot}"></span>${group.label}</div>
-          <span class="rounded-full bg-white/[0.045] px-2 py-1 text-[10px] font-semibold text-zinc-600">${items.length}</span>
-        </div>
-        <div class="space-y-3" data-drop-status="${group.target}">${items.map(compactCard).join("")}</div>
-      </div>`;
-  }).join("");
-  els.gallery.innerHTML = plans.map(galleryCard).join("");
-  els.table.innerHTML = tableMarkup(plans);
-
-  [els.board, els.gallery, els.table].forEach((element) => element.classList.add("hidden"));
-  if (state.view === "board") els.board.classList.remove("hidden");
-  if (state.view === "gallery") { els.gallery.classList.remove("hidden"); els.gallery.classList.add("grid"); }
-  if (state.view === "table") els.table.classList.remove("hidden");
+  els.grid.innerHTML = plans.map(shotCard).join("");
+  els.count.textContent = `${plans.length} of ${state.plans.length} shots`;
   els.empty.classList.toggle("hidden", plans.length > 0);
-  document.querySelectorAll(".view-button").forEach((button) => button.classList.toggle("active", button.dataset.view === state.view));
-  bindPlanEvents();
-  bindDragEvents();
   lucide.createIcons();
 }
 
-function bindPlanEvents() {
-  document.querySelectorAll("[data-plan-id]").forEach((element) => {
-    element.addEventListener("click", () => {
-      openPlan(Number(element.dataset.planId));
-    });
-    element.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openPlan(Number(element.dataset.planId)); }
-    });
-  });
-}
-
-function bindDragEvents() {
-  document.querySelectorAll(".plan-card[draggable='true']").forEach((card) => {
-    card.addEventListener("dragstart", (event) => {
-      event.dataTransfer.setData("text/plain", card.dataset.planId);
-      card.classList.add("dragging");
-    });
-    card.addEventListener("dragend", () => card.classList.remove("dragging"));
-  });
-  document.querySelectorAll(".board-column").forEach((column) => {
-    column.addEventListener("dragover", (event) => { event.preventDefault(); column.classList.add("drag-over"); });
-    column.addEventListener("dragleave", () => column.classList.remove("drag-over"));
-    column.addEventListener("drop", async (event) => {
-      event.preventDefault();
-      column.classList.remove("drag-over");
-      const id = Number(event.dataTransfer.getData("text/plain"));
-      const status = column.querySelector("[data-drop-status]").dataset.dropStatus;
-      const plan = state.plans.find((item) => item.id === id);
-      if (!plan || !allowedStatusesForPlan(plan).includes(status)) {
-        showToast("Your role cannot move a plan there");
-        return;
-      }
-      await setPlanStatus(id, status);
-    });
-  });
-}
-
-function allowedStatusesForPlan(plan) {
-  if (["Admin", "Supervisor"].includes(state.currentUser.role)) return state.permissions.allowedStatuses || [];
-  if (state.currentUser.role === "Creator" && ["Approved", "Delivered"].includes(plan.status)) return [];
-  if (state.currentUser.role === "Reviewer" && plan.status !== "Review") return [];
-  return state.permissions.allowedStatuses || [];
-}
-
 function openPlan(id) {
-  window.location.assign(`/plans/${id}`);
-}
-
-async function setPlanStatus(id, status) {
-  const response = await fetch(`/api/plans/${id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status }) });
-  if (!response.ok) return showToast("Could not update status");
-  const updated = await response.json();
-  const index = state.plans.findIndex((plan) => plan.id === id);
-  state.plans[index] = { ...state.plans[index], ...updated };
-  render();
-  showToast(`Moved to ${status}`);
+  const query = window.shotNavigation.query();
+  window.location.assign(`/plans/${id}${query ? `?${query}` : ""}`);
 }
 
 function openModal() {
+  for (const name of ["sequence_number", "shot_number"]) {
+    const value = document.querySelector("#shotNavigationForm").elements[name].value;
+    els.form.elements[name].value = value;
+  }
   els.modal.classList.remove("hidden", "pointer-events-none");
   els.modal.classList.add("grid");
   els.modal.setAttribute("aria-hidden", "false");
@@ -253,7 +138,7 @@ function showToast(message) {
   showToast.timer = setTimeout(() => els.toast.classList.add("translate-y-4", "opacity-0"), 2200);
 }
 
-document.querySelectorAll(".view-button").forEach((button) => button.addEventListener("click", () => { state.view = button.dataset.view; render(); }));
+document.addEventListener("shotfilterschange", render);
 document.querySelectorAll("[data-planned-feature]").forEach((button) => button.addEventListener("click", () => showToast(`${button.dataset.plannedFeature} is planned for a future update`)));
 els.search.addEventListener("input", (event) => { state.query = event.target.value; render(); });
 els.filter.addEventListener("change", (event) => { state.status = event.target.value; render(); });

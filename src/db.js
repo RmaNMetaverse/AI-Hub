@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
+import { matchingShotNumbers, migrateShotNumbers, shotFilters, shotNumbers } from "./shot-numbers.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const defaultDbPath = path.join(__dirname, "..", "data", "ai-hub.db");
@@ -167,6 +168,10 @@ function ensureColumn(table, column, definition) {
 }
 
 ensureColumn("ai_plans", "selected_generation_id", "INTEGER");
+ensureColumn("ai_plans", "sequence_number", "INTEGER");
+ensureColumn("ai_plans", "shot_number", "INTEGER");
+ensureColumn("generations", "sequence_number", "INTEGER");
+ensureColumn("generations", "shot_number", "INTEGER");
 ensureColumn("generations", "prompt", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("generations", "negative_prompt", "TEXT NOT NULL DEFAULT ''");
 ensureColumn("generations", "input_tokens", "INTEGER NOT NULL DEFAULT 0");
@@ -327,6 +332,7 @@ function seedDatabase() {
 }
 
 seedDatabase();
+migrateShotNumbers(db);
 
 const backfillVersionNumbers = db.transaction(() => {
   const generations = db.prepare("SELECT id, plan_id, prompt_version, version_number FROM generations ORDER BY plan_id, id").all();
@@ -376,9 +382,17 @@ function normalizePlan(plan) {
   };
 }
 
-export function getDashboard() {
+export function getDashboard(input = {}) {
+  const filters = shotFilters(input);
   const project = db.prepare("SELECT * FROM projects ORDER BY id LIMIT 1").get();
-  const plans = db.prepare("SELECT * FROM ai_plans WHERE project_id = ? ORDER BY updated_at DESC, id DESC").all(project.id).map(normalizePlan);
+  const conditions = Object.keys(filters).map((key) => `p.${key} = @${key}`);
+  const plans = db.prepare(`
+    SELECT p.*, (SELECT MAX(g.created_at) FROM generations g WHERE g.plan_id = p.id) AS generated_at,
+      COALESCE((SELECT MAX(g.created_at) FROM generations g WHERE g.plan_id = p.id), p.created_at) AS sort_at,
+      (SELECT COUNT(*) FROM generations g WHERE g.plan_id = p.id) AS generation_count
+    FROM ai_plans p WHERE p.project_id = @project_id ${conditions.length ? `AND ${conditions.join(" AND ")}` : ""}
+    ORDER BY sort_at DESC, p.id DESC
+  `).all({ project_id: project.id, ...filters }).map(normalizePlan);
   return { project, plans };
 }
 
@@ -390,6 +404,8 @@ export function getPlan(id) {
   const selectedGeneration = generations.find((generation) => generation.id === plan.selected_generation_id) || null;
   return {
     ...normalizePlan(plan),
+    generated_at: generations[0]?.created_at || null,
+    sort_at: generations[0]?.created_at || plan.created_at,
     generations,
     selected_generation: selectedGeneration,
     generation_count: generations.length,
@@ -645,6 +661,7 @@ function replaceGenerationResources(generationId, links) {
 export function createGeneration(planId, input, createdBy) {
   const plan = db.prepare("SELECT * FROM ai_plans WHERE id = ?").get(planId);
   if (!plan) throw new Error("Shot not found");
+  const numbers = matchingShotNumbers(plan, input);
   const fields = generationFields(planId, input, { prompt: plan.prompt, negative_prompt: plan.negative_prompt, model: plan.model });
   const links = generationLinks(planId, input.resources);
 
@@ -652,12 +669,12 @@ export function createGeneration(planId, input, createdBy) {
     const result = db.prepare(`
       INSERT INTO generations (
         plan_id, label, prompt_version, version_number, model, notes, prompt, negative_prompt,
-        platform_id, platform_name, token_count, token_price_snapshot, seed, created_by
+        platform_id, platform_name, token_count, token_price_snapshot, seed, created_by, sequence_number, shot_number
       ) VALUES (
         @plan_id, @label, @prompt_version, @version_number, @model, @notes, @prompt, @negative_prompt,
-        @platform_id, @platform_name, @token_count, @token_price_snapshot, @seed, @created_by
+        @platform_id, @platform_name, @token_count, @token_price_snapshot, @seed, @created_by, @sequence_number, @shot_number
       )
-    `).run({ plan_id: planId, created_by: createdBy, ...fields });
+    `).run({ plan_id: planId, created_by: createdBy, ...fields, ...numbers });
     const id = Number(result.lastInsertRowid);
     replaceGenerationResources(id, links);
     db.prepare(`
@@ -674,6 +691,8 @@ export function createGeneration(planId, input, createdBy) {
 export function updateGeneration(id, input) {
   const current = db.prepare("SELECT * FROM generations WHERE id = ?").get(id);
   if (!current) throw new Error("Generation not found");
+  matchingShotNumbers(current, input, { partial: true });
+  if (input.plan_id !== undefined && Number(input.plan_id) !== current.plan_id) throw new Error("Generation shot is locked");
   const fields = generationFields(current.plan_id, input, current);
   const links = input.resources === undefined ? null : generationLinks(current.plan_id, input.resources, id);
 
@@ -745,8 +764,9 @@ const allowedStatuses = new Set(["Idea", "Brief Ready", "Generating", "Review", 
 
 export function createPlan(input) {
   const title = String(input.title || "").trim();
-  const shotCode = String(input.shot_code || "").trim();
-  if (!title || !shotCode) throw new Error("Title and shot code are required");
+  if (!title) throw new Error("Title is required");
+  const numbers = shotNumbers(input);
+  const shotCode = `SQ${String(numbers.sequence_number).padStart(2, "0")}-SH${String(numbers.shot_number).padStart(3, "0")}`;
 
   const project = db.prepare("SELECT id FROM projects ORDER BY id LIMIT 1").get();
   const status = allowedStatuses.has(input.status) ? input.status : "Idea";
@@ -760,8 +780,8 @@ export function createPlan(input) {
   const result = db.prepare(`
     INSERT INTO ai_plans (
       project_id, shot_code, title, description, status, media_type, owner, model,
-      due_date, priority, next_action, prompt, aspect_ratio, duration, tags, image_position
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      due_date, priority, next_action, prompt, aspect_ratio, duration, tags, image_position, sequence_number, shot_number, sequence_name
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     project.id, shotCode, title, String(input.description || ""), status,
     String(input.media_type || "Video"), String(input.owner || "Unassigned"),
@@ -769,7 +789,7 @@ export function createPlan(input) {
     String(input.priority || "Medium"), String(input.next_action || "Complete creative brief"),
     String(input.prompt || ""), String(input.aspect_ratio || "16:9"),
     String(input.duration || "5 sec"), String(input.tags || ""),
-    imagePositions[count % imagePositions.length]
+    imagePositions[count % imagePositions.length], numbers.sequence_number, numbers.shot_number, `Sequence ${numbers.sequence_number}`
   );
 
   return getPlan(Number(result.lastInsertRowid));
@@ -785,6 +805,7 @@ export function updatePlanStatus(id, status) {
 export function updatePlan(id, input) {
   const current = db.prepare("SELECT * FROM ai_plans WHERE id = ?").get(id);
   if (!current) throw new Error("Plan not found");
+  matchingShotNumbers(current, input, { partial: true });
 
   if (Object.hasOwn(input, "model")) {
     const requestedModel = String(input.model || "Not selected").trim();

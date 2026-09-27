@@ -68,8 +68,8 @@ export const uploadResourceFile = multer({
   limits: {
     fileSize: maxUploadBytes,
     files: 1,
-    fields: 3,
-    parts: 4,
+    fields: 5,
+    parts: 6,
     fieldNameSize: 80,
     fieldSize: 8 * 1024,
     headerPairs: 100

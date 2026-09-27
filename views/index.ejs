@@ -71,20 +71,16 @@
         </header>
 
         <div class="px-4 pb-10 pt-7 sm:px-6 xl:px-8">
+          <%- include('partials/shot-navigation', { numberFilters, detail: false }) %>
           <div class="flex flex-col justify-between gap-5 xl:flex-row xl:items-end">
             <div>
               <div class="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-600">
                 <span><%= project.code %></span><span class="h-1 w-1 rounded-full bg-zinc-700"></span><span>AI Production</span>
               </div>
-              <h1 class="text-3xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">Production board</h1>
+              <h1 class="text-3xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">Shots</h1>
               <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500"><%= project.description %></p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-              <div class="flex rounded-full border border-white/[0.08] bg-white/[0.035] p-1" aria-label="View options">
-                <button class="view-button active rounded-full px-3 py-1.5 text-xs font-medium text-zinc-500" data-view="board">Board</button>
-                <button class="view-button rounded-full px-3 py-1.5 text-xs font-medium text-zinc-500" data-view="gallery">Gallery</button>
-                <button class="view-button rounded-full px-3 py-1.5 text-xs font-medium text-zinc-500" data-view="table">List</button>
-              </div>
               <select id="statusFilter" class="h-10 rounded-full border border-white/[0.08] bg-white/[0.035] px-3 text-xs font-medium text-zinc-400 outline-none">
                 <option value="all">All statuses</option>
                 <option>Idea</option><option>Brief Ready</option><option>Generating</option>
@@ -96,13 +92,12 @@
           <section id="statsRow" class="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.07] lg:grid-cols-4">
           </section>
 
-          <section id="boardView" class="mt-8 grid min-w-0 gap-4 xl:grid-cols-4"></section>
-          <section id="galleryView" class="mt-8 hidden grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"></section>
-          <section id="tableView" class="mt-8 hidden overflow-hidden rounded-2xl border border-white/[0.08] bg-[#101113]"></section>
+          <div class="mt-7 flex flex-wrap justify-between gap-2 text-xs text-zinc-500"><span id="shotResultCount" aria-live="polite"></span><span>Newest generation first · ungenerated shots use creation date</span></div>
+          <section id="planGrid" aria-label="Shots" class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"></section>
           <div id="emptyState" class="mt-16 hidden rounded-3xl border border-dashed border-white/10 py-16 text-center">
             <i data-lucide="search-x" class="mx-auto h-8 w-8 text-zinc-700"></i>
             <div class="mt-4 text-sm font-semibold">No plans found</div>
-            <div class="mt-1 text-xs text-zinc-600">Try another search or clear the status filter.</div>
+            <div class="mt-1 text-xs text-zinc-600">Change #Seq or #Shot, or clear the search and status filters.</div>
           </div>
         </div>
       </main>
@@ -154,8 +149,10 @@
           <button id="closeModalButton" class="icon-button" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button>
         </div>
         <form id="newPlanForm" class="mt-7 grid gap-5 sm:grid-cols-2">
-          <label><span class="field-label">Plan title *</span><input name="title" class="field" placeholder="e.g. Signal discovery" required /></label>
-          <label><span class="field-label">Shot code *</span><input name="shot_code" class="field" placeholder="SC02-SH018" required /></label>
+          <label><span class="field-label">#Seq · Sequence number *</span><input name="sequence_number" type="number" min="1" max="1000000" step="1" class="field text-2xl" required /></label>
+          <label><span class="field-label">#Shot · Plan / Shot number *</span><input name="shot_number" type="number" min="1" max="1000000" step="1" class="field text-2xl" required /></label>
+          <p class="text-xs text-zinc-500 sm:col-span-2">Both numbers are required and locked after creation. Every generation and uploaded file belongs to this numbered shot.</p>
+          <label class="sm:col-span-2"><span class="field-label">Plan title *</span><input name="title" class="field" placeholder="e.g. Signal discovery" required /></label>
           <label><span class="field-label">Status</span><select name="status" class="field"><option>Idea</option><option>Brief Ready</option><option>Generating</option><option>Review</option></select></label>
           <label><span class="field-label">Media type</span><select name="media_type" class="field"><option>Video</option><option>Image</option><option>Audio</option><option>Voice</option><option>VFX element</option></select></label>
           <label><span class="field-label">AI model</span><select name="model" class="field"><option>Not selected</option><% generationCatalogs.models.forEach(model => { %><option><%= model.name %></option><% }) %></select></label>
@@ -180,6 +177,7 @@
       window.__AI_HUB_GENERATION_CATALOGS__ = <%- JSON.stringify(generationCatalogs).replaceAll('<', '\\u003c') %>;
     </script>
     <script src="/vendor/lucide/lucide.js"></script>
+    <script src="/js/shot-navigation.js" defer></script>
     <script src="/js/app.js" defer></script>
   </body>
 </html>
