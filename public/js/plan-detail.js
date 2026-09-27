@@ -320,7 +320,7 @@ function renderResourcePicker() {
       <input type="checkbox" class="generation-resource-checkbox h-4 w-4 accent-[#d6ff45]" data-resource-id="${resource.id}" ${selected ? "checked" : ""} aria-label="Use ${escapeHtml(resource.original_name)}" />
       <span class="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-black/30 text-zinc-600">${thumb}</span>
       <span class="min-w-0 flex-1"><span class="block truncate text-[11px] font-semibold text-zinc-300">${escapeHtml(resource.original_name)}</span><span class="mt-1 block text-[9px] text-zinc-700">${escapeHtml(resource.category)} · ${formatBytes(resource.size_bytes)}${resource.generation_usage_count ? ` · used ${resource.generation_usage_count}×` : ""}</span></span>
-      <select class="generation-resource-role field h-9 w-36 shrink-0 py-0 text-[10px]" data-resource-id="${resource.id}" ${selected ? "" : "disabled"}>${resourceRoleOptions(role)}</select>
+      <select class="generation-resource-role field h-9 w-36 shrink-0 py-0 pl-2.5 pr-7 text-[10px]" data-resource-id="${resource.id}" ${selected ? "" : "disabled"}>${resourceRoleOptions(role)}</select>
     </div>`;
   }).join("");
 

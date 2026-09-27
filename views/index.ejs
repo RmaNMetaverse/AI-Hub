@@ -19,14 +19,6 @@
           </div>
         </div>
 
-        <div class="mt-7 rounded-2xl border border-white/[0.08] bg-white/[0.035] p-3">
-          <div class="mb-2 flex items-center justify-between text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">
-            <span>Active project</span>
-          </div>
-          <div class="truncate text-sm font-semibold text-zinc-200"><%= project.title %></div>
-          <div class="mt-1 text-[11px] text-zinc-600"><%= project.code %> · Short film</div>
-        </div>
-
         <nav class="mt-6 space-y-1" aria-label="Main navigation">
           <a href="/" class="nav-item active" aria-current="page"><i data-lucide="layout-grid" class="h-[17px] w-[17px]"></i>Production</a>
           <a href="/prompt-library" class="nav-item"><i data-lucide="book-open" class="h-[17px] w-[17px]"></i>Prompt Library</a>
@@ -78,7 +70,7 @@
               <p class="mt-2 max-w-xl text-sm leading-6 text-zinc-500"><%= project.description %></p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
-              <select id="statusFilter" class="h-10 rounded-full border border-white/[0.08] bg-white/[0.035] px-3 text-xs font-medium text-zinc-400 outline-none">
+              <select id="statusFilter" class="h-10 rounded-full border border-white/10 bg-[#0d0f12] pl-4 pr-9 text-xs font-medium text-zinc-300 outline-none transition hover:border-acid/40 focus:border-acid focus:text-acid focus:ring-2 focus:ring-acid/15">
                 <option value="all">All statuses</option>
                 <option value="WIP">WIP</option>
                 <option value="Approved">Approved</option>
