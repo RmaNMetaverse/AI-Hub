@@ -31,13 +31,16 @@ import {
   getPlanCover,
   getPrompt,
   getPromptAsset,
+  getReportData,
   getResource,
   getWorkspaceRole,
+  listActivities,
   listLibraryAssets,
   listAccounts,
   listPrompts,
   listResources,
   listWorkspaceRoles,
+  logActivity,
   replacePlanCover,
   selectGeneration,
   updatePlan,
@@ -152,6 +155,21 @@ function roleDefinitions() {
   return Object.fromEntries(listWorkspaceRoles().map((role) => [role.name, role.description]));
 }
 
+function recordActivity(user, action, entityType, entityId, summary, { planId = null, details = {} } = {}) {
+  if (!user) return;
+  logActivity({
+    userId: user.id,
+    actorName: user.display_name,
+    actorRole: user.role,
+    action,
+    entityType,
+    entityId,
+    planId,
+    summary,
+    details
+  });
+}
+
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 app.disable("x-powered-by");
@@ -224,6 +242,7 @@ router.post("/auth/activate", async (request, response) => {
     const user = await activateAccount(username, password);
     clearAttempts(request, username);
     beginSession(response, request, user);
+    recordActivity(user, "activated_account", "user", user.id, `${user.display_name} activated their account`);
     response.json({ user });
   } catch (error) {
     recordFailedAttempt(request, username);
@@ -241,10 +260,12 @@ router.post("/auth/login", async (request, response) => {
   }
   clearAttempts(request, username);
   beginSession(response, request, user);
+  recordActivity(user, "signed_in", "session", null, `${user.display_name} signed in`);
   response.json({ user });
 });
 
 router.post("/auth/logout", (request, response) => {
+  recordActivity(request.user, "signed_out", "session", null, `${request.user?.display_name || "A user"} signed out`);
   endSession(response, request);
   response.status(204).end();
 });
@@ -342,6 +363,26 @@ router.get("/asset-library", (request, response) => {
   });
 });
 
+router.get("/reports", (request, response) => {
+  const dashboard = getDashboard();
+  response.render("reports", {
+    project: dashboard.project,
+    currentUser: request.user,
+    permissions: request.permissions,
+    report: getReportData()
+  });
+});
+
+router.get("/activity", (request, response) => {
+  const dashboard = getDashboard();
+  response.render("activity", {
+    project: dashboard.project,
+    currentUser: request.user,
+    permissions: request.permissions,
+    activities: listActivities({ limit: 1000 })
+  });
+});
+
 router.get("/plans/:id", (request, response) => {
   const plan = getPlan(Number(request.params.id));
   if (!plan) return response.status(404).send("Shot not found");
@@ -390,7 +431,11 @@ router.get("/api/plans/:id", (request, response) => {
 
 router.post("/api/plans", requirePermission("canCreatePlans"), (request, response) => {
   try {
+    if (request.body.status === "Approved" && !request.permissions.canApprovePlans) {
+      return response.status(403).json({ error: "Only a Supervisor can approve a plan" });
+    }
     const plan = createPlan(request.body);
+    recordActivity(request.user, "created_plan", "plan", plan.id, `Created ${plan.shot_code} · ${plan.title}`, { planId: plan.id });
     response.status(201).json(planForClient(plan));
   } catch (error) {
     response.status(400).json({ error: error.message });
@@ -402,15 +447,18 @@ router.patch("/api/plans/:id/status", (request, response) => {
     const currentPlan = getPlan(Number(request.params.id));
     if (!currentPlan) return response.status(404).json({ error: "Plan not found" });
     if (currentPlan.status === "Approved" && !request.permissions.canApprovePlans) {
-      return response.status(403).json({ error: "Approved work can only be changed by an Admin or Supervisor" });
+      return response.status(403).json({ error: "Approved work can only be changed by a Supervisor" });
     }
     if (request.body.status === "Approved" && !request.permissions.canApprovePlans) {
-      return response.status(403).json({ error: "Only an Admin or Supervisor can approve a shot" });
+      return response.status(403).json({ error: "Only a Supervisor can approve a shot" });
     }
     if (!["WIP", "Approved"].includes(request.body.status) || !request.permissions.allowedStatuses.includes(request.body.status)) {
       return response.status(400).json({ error: "Invalid status or your role cannot move a plan to that status" });
     }
     const plan = updatePlanStatus(Number(request.params.id), request.body.status, request.user.id);
+    recordActivity(request.user, request.body.status === "Approved" ? "approved_plan" : "changed_plan_status", "plan", plan.id,
+      `${request.body.status === "Approved" ? "Approved" : "Changed status of"} ${plan.shot_code} · ${plan.title}${request.body.status === "Approved" ? "" : ` to ${request.body.status}`}`,
+      { planId: plan.id, details: { status: request.body.status } });
     response.json(planForClient(plan));
   } catch (error) {
     response.status(400).json({ error: error.message });
@@ -419,7 +467,12 @@ router.patch("/api/plans/:id/status", (request, response) => {
 
 router.post("/api/plans/:id/approval", requirePermission("canApprovePlans"), (request, response) => {
   try {
-    response.json(planForClient(approvePlan(Number(request.params.id), request.user.id, request.body?.generation_id)));
+    const plan = approvePlan(Number(request.params.id), request.user.id, request.body?.generation_id);
+    recordActivity(request.user, "approved_plan", "plan", plan.id, `Approved ${plan.shot_code} · ${plan.title}`, {
+      planId: plan.id,
+      details: { generation_id: plan.selected_generation_id }
+    });
+    response.json(planForClient(plan));
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
@@ -428,6 +481,7 @@ router.post("/api/plans/:id/approval", requirePermission("canApprovePlans"), (re
 router.patch("/api/plans/:id", requirePermission("canEditPlans"), (request, response) => {
   try {
     const plan = updatePlan(Number(request.params.id), request.body);
+    recordActivity(request.user, "updated_plan", "plan", plan.id, `Updated ${plan.shot_code} · ${plan.title}`, { planId: plan.id });
     response.json(planForClient(plan));
   } catch (error) {
     response.status(400).json({ error: error.message });
@@ -437,10 +491,15 @@ router.patch("/api/plans/:id", requirePermission("canEditPlans"), (request, resp
 router.post("/api/plans/:id/generations", requirePermission("canEditPlans"), (request, response) => {
   try {
     if (request.body.status === "Approved" && !request.permissions.canApprovePlans) {
-      return response.status(403).json({ error: "Only an Admin or Supervisor can approve a generation" });
+      return response.status(403).json({ error: "Only a Supervisor can approve a generation" });
     }
     const generation = createGeneration(Number(request.params.id), request.body, request.user.id);
     const updatedPlan = planForClient(getPlan(Number(request.params.id)));
+    recordActivity(request.user, generation.status === "Approved" ? "created_and_approved_generation" : "created_generation", "generation", generation.id,
+      `Created ${generation.version_label} for ${updatedPlan.shot_code} · ${updatedPlan.title}`, {
+        planId: updatedPlan.id,
+        details: { tokens: generation.total_tokens, cost: generation.generation_cost, platform: generation.platform_name }
+      });
     response.status(201).json({ generation: updatedPlan.generations.find((item) => item.id === generation.id), plan: updatedPlan });
   } catch (error) {
     response.status(400).json({ error: error.message });
@@ -452,10 +511,15 @@ router.patch("/api/generations/:id", requirePermission("canEditPlans"), (request
     const generation = getGeneration(Number(request.params.id));
     if (!generation) return response.status(404).json({ error: "Generation not found" });
     if (request.body.status === "Approved" && !request.permissions.canApprovePlans && generation.status !== "Approved") {
-      return response.status(403).json({ error: "Only an Admin or Supervisor can approve a generation" });
+      return response.status(403).json({ error: "Only a Supervisor can approve a generation" });
     }
-    updateGeneration(generation.id, request.body);
+    const savedGeneration = updateGeneration(generation.id, request.body);
     const updatedPlan = planForClient(getPlan(generation.plan_id));
+    recordActivity(request.user, "updated_generation", "generation", generation.id,
+      `Updated ${savedGeneration.version_label} for ${updatedPlan.shot_code} · ${updatedPlan.title}`, {
+        planId: updatedPlan.id,
+        details: { tokens: savedGeneration.total_tokens, cost: savedGeneration.generation_cost }
+      });
     response.json({ generation: updatedPlan.generations.find((item) => item.id === generation.id), plan: updatedPlan });
   } catch (error) {
     response.status(400).json({ error: error.message });
@@ -471,12 +535,15 @@ router.patch("/api/generations/:id/status", (request, response) => {
       return response.status(400).json({ error: "Invalid status. Allowed statuses: WIP, Approved" });
     }
     if (targetStatus === "Approved" && !request.permissions.canApprovePlans) {
-      return response.status(403).json({ error: "Only an Admin or Supervisor can approve a generation" });
+      return response.status(403).json({ error: "Only a Supervisor can approve a generation" });
     }
     if (targetStatus === "WIP" && !request.permissions.canManageWorkflow && !request.permissions.canApprovePlans) {
       return response.status(403).json({ error: "Your role cannot change generation status" });
     }
     const updatedPlan = planForClient(updateGenerationStatus(generation.id, targetStatus, request.user.id));
+    recordActivity(request.user, targetStatus === "Approved" ? "approved_generation" : "changed_generation_status", "generation", generation.id,
+      `${targetStatus === "Approved" ? "Approved" : "Changed status of"} ${generation.version_label} for ${updatedPlan.shot_code} · ${updatedPlan.title}${targetStatus === "Approved" ? "" : ` to ${targetStatus}`}`,
+      { planId: updatedPlan.id, details: { status: targetStatus } });
     response.json({
       generation: updatedPlan.generations.find((item) => item.id === generation.id),
       plan: updatedPlan
@@ -491,6 +558,8 @@ router.post("/api/generations/:id/approval", requirePermission("canApprovePlans"
     const generation = getGeneration(Number(request.params.id));
     if (!generation) return response.status(404).json({ error: "Generation not found" });
     const updatedPlan = planForClient(approveGeneration(generation.id, request.user.id));
+    recordActivity(request.user, "approved_generation", "generation", generation.id,
+      `Approved ${generation.version_label} for ${updatedPlan.shot_code} · ${updatedPlan.title}`, { planId: updatedPlan.id });
     response.json({
       generation: updatedPlan.generations.find((item) => item.id === generation.id),
       plan: updatedPlan
@@ -502,7 +571,12 @@ router.post("/api/generations/:id/approval", requirePermission("canApprovePlans"
 
 router.delete("/api/generations/:id", requirePermission("canDeletePlans"), (request, response) => {
   try {
-    const planId = deleteGeneration(Number(request.params.id));
+    const generation = getGeneration(Number(request.params.id));
+    if (!generation) return response.status(404).json({ error: "Generation not found" });
+    const planId = deleteGeneration(generation.id);
+    const plan = getPlan(planId);
+    recordActivity(request.user, "deleted_generation", "generation", generation.id,
+      `Deleted ${generation.version_label} from ${plan?.shot_code || "a plan"} · ${plan?.title || "Deleted plan"}`, { planId });
     response.json(planForClient(getPlan(planId)));
   } catch (error) {
     response.status(400).json({ error: error.message });
@@ -511,8 +585,11 @@ router.delete("/api/generations/:id", requirePermission("canDeletePlans"), (requ
 
 router.delete("/api/plans/:id", requirePermission("canDeletePlans"), async (request, response) => {
   try {
-    const storageKeys = deletePlan(Number(request.params.id));
+    const plan = getPlan(Number(request.params.id));
+    if (!plan) return response.status(404).json({ error: "Plan not found" });
+    const storageKeys = deletePlan(plan.id);
     await Promise.allSettled(storageKeys.map((key) => removeStoredFile(key)));
+    recordActivity(request.user, "deleted_plan", "plan", plan.id, `Deleted ${plan.shot_code} · ${plan.title}`);
     response.status(204).end();
   } catch (error) {
     response.status(400).json({ error: error.message });
@@ -522,6 +599,11 @@ router.delete("/api/plans/:id", requirePermission("canDeletePlans"), async (requ
 router.patch("/api/plans/:id/selected-generation", requirePermission("canEditPlans"), (request, response) => {
   try {
     const plan = selectGeneration(Number(request.params.id), Number(request.body.generation_id));
+    recordActivity(request.user, "selected_final_generation", "plan", plan.id,
+      `Selected ${plan.selected_generation?.version_label || "a generation"} as final for ${plan.shot_code} · ${plan.title}`, {
+        planId: plan.id,
+        details: { generation_id: plan.selected_generation_id }
+      });
     response.json(planForClient(plan));
   } catch (error) {
     response.status(400).json({ error: error.message });
@@ -580,6 +662,7 @@ router.post("/api/plans/:id/cover", requirePermission("canEditPlans"), (request,
       if (saved.previousStorageKey && saved.previousStorageKey !== storageKey) {
         await removeStoredFile(saved.previousStorageKey).catch(() => {});
       }
+      recordActivity(request.user, "updated_plan_cover", "plan", plan.id, `Updated the cover for ${plan.shot_code} · ${plan.title}`, { planId: plan.id });
       response.status(201).json(planCardById(plan.id));
     } catch (error) {
       if (storageKey) await removeStoredFile(storageKey).catch(() => {});
@@ -594,6 +677,7 @@ router.delete("/api/plans/:id/cover", requirePermission("canEditPlans"), async (
     if (!plan) return response.status(404).json({ error: "Plan not found" });
     const current = deletePlanCover(plan.id);
     if (current) await removeStoredFile(current.storage_key);
+    if (current) recordActivity(request.user, "removed_plan_cover", "plan", plan.id, `Removed the custom cover from ${plan.shot_code} · ${plan.title}`, { planId: plan.id });
     response.json(planCardById(plan.id));
   } catch (_error) {
     response.status(500).json({ error: "The custom cover could not be removed" });
@@ -650,6 +734,11 @@ router.post("/api/plans/:id/resources", requirePermission("canEditPlans"), (requ
         checksumSha256,
         notes
       });
+      recordActivity(request.user, "uploaded_asset", "resource", resource.id,
+        `Uploaded ${resource.original_name} as ${resource.asset_role} to ${plan.shot_code} · ${plan.title}`, {
+          planId: plan.id,
+          details: { asset_role: resource.asset_role, kind: resource.kind, size_bytes: resource.size_bytes }
+        });
       response.status(201).json(resourceForClient(resource));
     } catch (error) {
       if (storageKey) await removeStoredFile(storageKey).catch(() => {});
@@ -668,7 +757,14 @@ router.patch("/api/resources/:id", requirePermission("canEditPlans"), (request, 
     const availableRoles = getGenerationCatalogs({ includeInactive: true }).resource_roles.map((item) => item.name);
     if (!availableRoles.includes(assetRole)) return response.status(400).json({ error: "Invalid asset type" });
     const notes = request.body.notes === undefined ? current.notes : String(request.body.notes).trim().slice(0, 2000);
-    response.json(resourceForClient(updateResource(current.id, { category, assetRole, notes })));
+    const resource = updateResource(current.id, { category, assetRole, notes });
+    const plan = getPlan(resource.plan_id);
+    recordActivity(request.user, "updated_asset", "resource", resource.id,
+      `Updated ${resource.original_name} in ${plan?.shot_code || "a plan"} · ${plan?.title || "Unknown plan"}`, {
+        planId: resource.plan_id,
+        details: { asset_role: resource.asset_role, category: resource.category }
+      });
+    response.json(resourceForClient(resource));
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
@@ -680,6 +776,9 @@ router.delete("/api/resources/:id", requirePermission("canEditPlans"), async (re
     if (!resource) return response.status(404).json({ error: "Resource not found" });
     await removeStoredFile(resource.storage_key);
     deleteResourceRecord(resource.id);
+    const plan = getPlan(resource.plan_id);
+    recordActivity(request.user, "deleted_asset", "resource", resource.id,
+      `Deleted ${resource.original_name} from ${plan?.shot_code || "a plan"} · ${plan?.title || "Unknown plan"}`, { planId: resource.plan_id });
     response.status(204).end();
   } catch (_error) {
     response.status(500).json({ error: "The resource could not be removed" });
@@ -784,7 +883,9 @@ router.get("/api/prompts", (_request, response) => {
 
 router.post("/api/prompts", requirePermission("canManageLibraries"), (request, response) => {
   try {
-    response.status(201).json(promptForClient(createPrompt(request.body, request.user.id)));
+    const prompt = createPrompt(request.body, request.user.id);
+    recordActivity(request.user, "created_prompt", "prompt", prompt.id, `Created prompt · ${prompt.title}`);
+    response.status(201).json(promptForClient(prompt));
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
@@ -792,7 +893,9 @@ router.post("/api/prompts", requirePermission("canManageLibraries"), (request, r
 
 router.patch("/api/prompts/:id", requirePermission("canManageLibraries"), (request, response) => {
   try {
-    response.json(promptForClient(updatePrompt(Number(request.params.id), request.body)));
+    const prompt = updatePrompt(Number(request.params.id), request.body);
+    recordActivity(request.user, "updated_prompt", "prompt", prompt.id, `Updated prompt · ${prompt.title}`);
+    response.json(promptForClient(prompt));
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
@@ -800,8 +903,11 @@ router.patch("/api/prompts/:id", requirePermission("canManageLibraries"), (reque
 
 router.delete("/api/prompts/:id", requirePermission("canManageLibraries"), async (request, response) => {
   try {
-    const storageKeys = deletePrompt(Number(request.params.id));
+    const prompt = getPrompt(Number(request.params.id));
+    if (!prompt) return response.status(404).json({ error: "Prompt not found" });
+    const storageKeys = deletePrompt(prompt.id);
     await Promise.allSettled(storageKeys.map((key) => removeStoredFile(key)));
+    recordActivity(request.user, "deleted_prompt", "prompt", prompt.id, `Deleted prompt · ${prompt.title}`);
     response.status(204).end();
   } catch (error) {
     response.status(400).json({ error: error.message });
@@ -811,17 +917,18 @@ router.delete("/api/prompts/:id", requirePermission("canManageLibraries"), async
 router.post("/api/prompts/:id/assets", requirePermission("canManageLibraries"), (request, response) => {
   const prompt = getPrompt(Number(request.params.id));
   if (!prompt) return response.status(404).json({ error: "Prompt not found" });
-  receiveLibraryUpload(uploadPromptAssetFile, request, response, (file) => fileForClient(createPromptAsset({
-    promptId: prompt.id,
-    uploadedBy: request.user.id,
-    ...file
-  }), "/prompt-assets"));
+  receiveLibraryUpload(uploadPromptAssetFile, request, response, (file) => {
+    const asset = createPromptAsset({ promptId: prompt.id, uploadedBy: request.user.id, ...file });
+    recordActivity(request.user, "uploaded_prompt_asset", "prompt_asset", asset.id, `Added ${asset.original_name} to prompt · ${prompt.title}`);
+    return fileForClient(asset, "/prompt-assets");
+  });
 });
 
 router.delete("/api/prompt-assets/:id", requirePermission("canManageLibraries"), async (request, response) => {
   try {
     const asset = deletePromptAsset(Number(request.params.id));
     await removeStoredFile(asset.storage_key);
+    recordActivity(request.user, "deleted_prompt_asset", "prompt_asset", asset.id, `Deleted prompt asset · ${asset.original_name}`);
     response.status(204).end();
   } catch (error) {
     response.status(400).json({ error: error.message });
@@ -841,21 +948,25 @@ router.get("/api/library-assets", (_request, response) => {
 router.post("/api/library-assets", requirePermission("canManageLibraries"), (request, response) => {
   receiveLibraryUpload(uploadAssetLibraryFile, request, response, (file) => {
     const category = assetCategories.includes(request.body.category) ? request.body.category : "Other";
-    return libraryAssetForClient(createLibraryAsset({
+    const asset = createLibraryAsset({
       title: String(request.body.title || file.originalName).trim().slice(0, 160),
       description: String(request.body.description || "").trim().slice(0, 3000),
       category,
       tags: String(request.body.tags || "").trim().slice(0, 1000),
       uploadedBy: request.user.id,
       ...file
-    }));
+    });
+    recordActivity(request.user, "uploaded_library_asset", "library_asset", asset.id, `Uploaded library asset · ${asset.title}`);
+    return libraryAssetForClient(asset);
   });
 });
 
 router.patch("/api/library-assets/:id", requirePermission("canManageLibraries"), (request, response) => {
   try {
     if (request.body.category !== undefined && !assetCategories.includes(request.body.category)) throw new Error("Invalid asset category");
-    response.json(libraryAssetForClient(updateLibraryAsset(Number(request.params.id), request.body)));
+    const asset = updateLibraryAsset(Number(request.params.id), request.body);
+    recordActivity(request.user, "updated_library_asset", "library_asset", asset.id, `Updated library asset · ${asset.title}`);
+    response.json(libraryAssetForClient(asset));
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
@@ -865,6 +976,7 @@ router.delete("/api/library-assets/:id", requirePermission("canManageLibraries")
   try {
     const asset = deleteLibraryAsset(Number(request.params.id));
     await removeStoredFile(asset.storage_key);
+    recordActivity(request.user, "deleted_library_asset", "library_asset", asset.id, `Deleted library asset · ${asset.title}`);
     response.status(204).end();
   } catch (error) {
     response.status(400).json({ error: error.message });
@@ -890,6 +1002,7 @@ router.post("/api/users", requirePermission("canManageAccounts"), (request, resp
     if (!displayName || displayName.length > 80) throw new Error("Display name is required");
     if (!getWorkspaceRole(role)) throw new Error("Invalid role");
     const user = createAccount({ username, displayName, role, createdBy: request.user.id });
+    recordActivity(request.user, "created_user", "user", user.id, `Created account for ${user.display_name} · ${user.role}`);
     response.status(201).json(user);
   } catch (error) {
     response.status(400).json({ error: error.message });
@@ -901,6 +1014,9 @@ router.patch("/api/users/:id", requirePermission("canManageAccounts"), (request,
     const role = request.body.role;
     if (role !== undefined && !getWorkspaceRole(role)) throw new Error("Invalid role");
     const user = updateAccount(Number(request.params.id), { role, active: request.body.active });
+    recordActivity(request.user, "updated_user", "user", user.id, `Updated account for ${user.display_name} · ${user.role}`, {
+      details: { active: user.active, role: user.role }
+    });
     response.json(user);
   } catch (error) {
     response.status(400).json({ error: error.message });
@@ -909,7 +1025,9 @@ router.patch("/api/users/:id", requirePermission("canManageAccounts"), (request,
 
 router.post("/api/roles", requirePermission("canManageAccounts"), (request, response) => {
   try {
-    response.status(201).json(createWorkspaceRole(request.body));
+    const role = createWorkspaceRole(request.body);
+    recordActivity(request.user, "created_role", "role", role.id, `Created workspace role · ${role.name}`);
+    response.status(201).json(role);
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
@@ -917,7 +1035,9 @@ router.post("/api/roles", requirePermission("canManageAccounts"), (request, resp
 
 router.patch("/api/roles/:id", requirePermission("canManageAccounts"), (request, response) => {
   try {
-    response.json(updateWorkspaceRole(Number(request.params.id), request.body));
+    const role = updateWorkspaceRole(Number(request.params.id), request.body);
+    recordActivity(request.user, "updated_role", "role", role.id, `Updated workspace role · ${role.name}`);
+    response.json(role);
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
@@ -925,7 +1045,9 @@ router.patch("/api/roles/:id", requirePermission("canManageAccounts"), (request,
 
 router.delete("/api/roles/:id", requirePermission("canManageAccounts"), (request, response) => {
   try {
+    const role = listWorkspaceRoles().find((item) => item.id === Number(request.params.id));
     deleteWorkspaceRole(Number(request.params.id));
+    recordActivity(request.user, "deleted_role", "role", Number(request.params.id), `Deleted workspace role · ${role?.name || request.params.id}`);
     response.status(204).end();
   } catch (error) {
     response.status(400).json({ error: error.message });
@@ -938,7 +1060,9 @@ router.get("/api/admin/catalogs", requirePermission("canManageAccounts"), (_requ
 
 router.post("/api/admin/catalogs/:type", requirePermission("canManageAccounts"), (request, response) => {
   try {
-    response.status(201).json(createCatalogItem(request.params.type, request.body));
+    const item = createCatalogItem(request.params.type, request.body);
+    recordActivity(request.user, "created_catalog_item", "catalog_item", item.id, `Added ${item.name} to ${request.params.type}`);
+    response.status(201).json(item);
   } catch (error) {
     response.status(400).json({ error: error.message });
   }
@@ -946,7 +1070,9 @@ router.post("/api/admin/catalogs/:type", requirePermission("canManageAccounts"),
 
 router.patch("/api/admin/catalogs/:type/:id", requirePermission("canManageAccounts"), (request, response) => {
   try {
-    response.json(updateCatalogItem(request.params.type, Number(request.params.id), request.body));
+    const item = updateCatalogItem(request.params.type, Number(request.params.id), request.body);
+    recordActivity(request.user, "updated_catalog_item", "catalog_item", item.id, `Updated ${item.name} in ${request.params.type}`);
+    response.json(item);
   } catch (error) {
     response.status(400).json({ error: error.message });
   }

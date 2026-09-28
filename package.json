@@ -10,7 +10,7 @@
     "dev": "npm run css:build && node scripts/dev.js",
     "start": "node server.js",
     "start:host": "npm run css:build && node server.js",
-    "check": "node --check server.js && node --check src/db.js && node --check src/auth.js && node --check src/storage.js && node --check src/shot-numbers.js && node --check scripts/dev.js && node --check scripts/container-dev.js && node --check tests/app.test.js && node --check tests/shot-numbers.test.js && node --check public/js/app.js && node --check public/js/auth.js && node --check public/js/plan-detail.js && node --check public/js/shot-navigation.js && node --check public/js/library.js",
+    "check": "node --check server.js && node --check src/db.js && node --check src/auth.js && node --check src/storage.js && node --check src/shot-numbers.js && node --check scripts/dev.js && node --check scripts/container-dev.js && node --check tests/app.test.js && node --check tests/shot-numbers.test.js && node --check public/js/app.js && node --check public/js/auth.js && node --check public/js/plan-detail.js && node --check public/js/shot-navigation.js && node --check public/js/library.js && node --check public/js/report.js && node --check public/js/activity.js",
     "test": "node --test --test-concurrency=1 tests/*.test.js",
     "verify": "npm run check && npm test",
     "docker:dev": "docker compose up --build app",

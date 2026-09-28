@@ -241,11 +241,28 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS activity_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    actor_name TEXT NOT NULL,
+    actor_role TEXT NOT NULL,
+    action TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id INTEGER,
+    plan_id INTEGER,
+    summary TEXT NOT NULL,
+    details TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE INDEX IF NOT EXISTS plan_approvals_plan_idx ON plan_approvals(plan_id, approved_at DESC);
   CREATE INDEX IF NOT EXISTS plan_covers_plan_idx ON plan_covers(plan_id);
   CREATE INDEX IF NOT EXISTS prompt_library_updated_idx ON prompt_library(updated_at DESC);
   CREATE INDEX IF NOT EXISTS prompt_assets_prompt_idx ON prompt_assets(prompt_id);
   CREATE INDEX IF NOT EXISTS asset_library_category_idx ON asset_library(category, created_at DESC);
+  CREATE INDEX IF NOT EXISTS activity_log_created_idx ON activity_log(created_at DESC, id DESC);
+  CREATE INDEX IF NOT EXISTS activity_log_user_idx ON activity_log(user_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS activity_log_plan_idx ON activity_log(plan_id, created_at DESC);
 `);
 
 function ensureColumn(table, column, definition) {
@@ -288,7 +305,7 @@ db.exec(`
 `);
 
 const defaultWorkspaceRoles = [
-  ["Admin", "Full workspace and account control.", 1, 1, 1, 1, 1, 1, 1, 1],
+  ["Admin", "Workspace and account management, excluding production approvals.", 1, 1, 1, 1, 1, 1, 1, 1],
   ["Supervisor", "Manage production and approve generated shots.", 1, 0, 1, 1, 1, 1, 1, 1],
   ["Generator", "Create shots, upload assets, and manage generations.", 1, 0, 1, 1, 1, 1, 0, 1],
   ["Creator", "Create plans, edit creative details, and manage generations.", 1, 0, 1, 1, 1, 1, 0, 1],
@@ -1185,6 +1202,99 @@ export function deleteResourceRecord(id) {
     if (deleted) db.prepare("UPDATE ai_plans SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(current.plan_id);
     return deleted;
   })();
+}
+
+export function logActivity({ userId, actorName, actorRole, action, entityType, entityId = null, planId = null, summary, details = {} }) {
+  const result = db.prepare(`
+    INSERT INTO activity_log (
+      user_id, actor_name, actor_role, action, entity_type, entity_id, plan_id, summary, details
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    userId || null,
+    String(actorName || "Unknown user").slice(0, 120),
+    String(actorRole || "Unknown").slice(0, 80),
+    String(action || "updated").slice(0, 80),
+    String(entityType || "workspace").slice(0, 80),
+    entityId || null,
+    planId || null,
+    String(summary || "Workspace activity").slice(0, 500),
+    JSON.stringify(details || {}).slice(0, 10000)
+  );
+  return Number(result.lastInsertRowid);
+}
+
+export function listActivities({ limit = 500 } = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 500, 1), 2000);
+  return db.prepare(`
+    SELECT activity_log.*,
+      p.title AS plan_title, p.sequence_number, p.shot_number
+    FROM activity_log
+    LEFT JOIN ai_plans p ON p.id = activity_log.plan_id
+    ORDER BY activity_log.created_at DESC, activity_log.id DESC
+    LIMIT ?
+  `).all(safeLimit).map((item) => {
+    let details = {};
+    try { details = JSON.parse(item.details || "{}"); } catch { details = {}; }
+    return { ...item, details };
+  });
+}
+
+const reportGenerationCostSql = `CASE
+  WHEN COALESCE(g.platform_name, '') <> '' THEN COALESCE(g.token_count, 0) * COALESCE(g.token_price_snapshot, 0)
+  ELSE ((COALESCE(g.input_tokens, 0) * COALESCE(g.input_cost_per_million, 0))
+    + (COALESCE(g.output_tokens, 0) * COALESCE(g.output_cost_per_million, 0))) / 1000000.0
+END`;
+
+export function getReportData() {
+  const users = db.prepare(`
+    SELECT u.id, u.username, u.display_name, COALESCE(wr.name, u.role) AS role, u.active,
+      COUNT(DISTINCT g.id) AS generation_count,
+      COUNT(DISTINCT g.plan_id) AS plan_count,
+      COUNT(DISTINCT CASE WHEN g.status = 'Approved' THEN g.id END) AS approved_generation_count,
+      COALESCE(SUM(CASE WHEN COALESCE(g.platform_name, '') <> ''
+        THEN COALESCE(g.token_count, 0)
+        ELSE COALESCE(g.input_tokens, 0) + COALESCE(g.output_tokens, 0) END), 0) AS token_count,
+      COALESCE(SUM(${reportGenerationCostSql}), 0) AS generation_cost,
+      (SELECT COUNT(*) FROM activity_log a WHERE a.user_id = u.id) AS activity_count,
+      (SELECT COUNT(*) FROM plan_approvals pa WHERE pa.approved_by = u.id) AS approval_count,
+      MAX(g.created_at) AS last_generation_at
+    FROM users u
+    LEFT JOIN workspace_roles wr ON wr.id = u.role_id
+    LEFT JOIN generations g ON g.created_by = u.id
+    GROUP BY u.id
+    ORDER BY CASE COALESCE(wr.name, u.role) WHEN 'Generator' THEN 1 WHEN 'Creator' THEN 2 ELSE 3 END,
+      generation_count DESC, u.display_name COLLATE NOCASE
+  `).all().map((item) => ({ ...item, active: Boolean(item.active) }));
+
+  const plans = db.prepare(`
+    SELECT p.id, p.title, p.shot_code, p.sequence_number, p.shot_number, p.status, p.created_at, p.updated_at,
+      (SELECT COUNT(*) FROM generations g WHERE g.plan_id = p.id) AS generation_count,
+      (SELECT COUNT(*) FROM generations g WHERE g.plan_id = p.id AND g.status = 'Approved') AS approved_generation_count,
+      (SELECT COUNT(*) FROM resources r WHERE r.plan_id = p.id) AS asset_count,
+      (SELECT COALESCE(SUM(r.size_bytes), 0) FROM resources r WHERE r.plan_id = p.id) AS asset_bytes,
+      (SELECT COALESCE(SUM(CASE WHEN COALESCE(g.platform_name, '') <> ''
+        THEN COALESCE(g.token_count, 0)
+        ELSE COALESCE(g.input_tokens, 0) + COALESCE(g.output_tokens, 0) END), 0)
+        FROM generations g WHERE g.plan_id = p.id) AS token_count,
+      (SELECT COALESCE(SUM(${reportGenerationCostSql}), 0) FROM generations g WHERE g.plan_id = p.id) AS generation_cost,
+      (SELECT MAX(g.created_at) FROM generations g WHERE g.plan_id = p.id) AS last_generation_at
+    FROM ai_plans p
+    ORDER BY p.updated_at DESC, p.id DESC
+  `).all();
+
+  const summary = db.prepare(`
+    SELECT
+      (SELECT COUNT(*) FROM ai_plans) AS plan_count,
+      (SELECT COUNT(*) FROM generations) AS generation_count,
+      (SELECT COUNT(*) FROM resources) AS asset_count,
+      (SELECT COUNT(*) FROM activity_log) AS activity_count,
+      (SELECT COALESCE(SUM(CASE WHEN COALESCE(g.platform_name, '') <> ''
+        THEN COALESCE(g.token_count, 0)
+        ELSE COALESCE(g.input_tokens, 0) + COALESCE(g.output_tokens, 0) END), 0) FROM generations g) AS token_count,
+      (SELECT COALESCE(SUM(${reportGenerationCostSql}), 0) FROM generations g) AS generation_cost
+  `).get();
+
+  return { summary, users, plans };
 }
 
 function normalizeTags(row) {

@@ -32,7 +32,8 @@
           <button id="teamNavButton" class="nav-item"><i data-lucide="users" class="h-[17px] w-[17px]"></i>Accounts<span class="ml-auto rounded-full bg-acid/10 px-1.5 py-0.5 text-[8px] uppercase tracking-wider text-acid">Admin</span></button>
           <button id="catalogsNavButton" class="nav-item"><i data-lucide="sliders-horizontal" class="h-[17px] w-[17px]"></i>Generation settings</button>
           <% } %>
-          <button type="button" class="nav-item" data-planned-feature="Activity" title="Planned feature"><i data-lucide="activity" class="h-[17px] w-[17px]"></i>Activity</button>
+          <a href="<%= basePath %>/reports" class="nav-item"><i data-lucide="chart-no-axes-combined" class="h-[17px] w-[17px]"></i>Reports</a>
+          <a href="<%= basePath %>/activity" class="nav-item"><i data-lucide="activity" class="h-[17px] w-[17px]"></i>Activity</a>
         </nav>
 
       </aside>
@@ -123,7 +124,7 @@
               <label class="flex items-center gap-2"><input type="checkbox" name="can_manage_libraries" /> Manage libraries</label>
               <label class="col-span-2 flex items-center gap-2"><input type="checkbox" name="can_manage_accounts" /> Manage accounts and settings</label>
             </fieldset>
-            <p class="text-[10px] leading-4 text-zinc-700">Approval stays exclusive to the built-in Admin and Supervisor roles.</p>
+            <p class="text-[10px] leading-4 text-zinc-700">Approval stays exclusive to the built-in Supervisor role.</p>
             <button type="submit" class="ghost-button h-10 w-full">Add custom role</button>
           </form>
         </section>

@@ -510,6 +510,10 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(forbiddenGenApproval.status, 403);
   const creatorApproval = await request(`/api/plans/${plan.id}/approval`, { method: "POST", cookie: creatorCookie });
   assert.equal(creatorApproval.status, 403);
+  const adminApproval = await request(`/api/plans/${plan.id}/approval`, { method: "POST", cookie: adminCookie });
+  assert.equal(adminApproval.status, 403);
+  const adminGenerationApproval = await request(`/api/generations/${firstGeneration.id}/approval`, { method: "POST", cookie: adminCookie });
+  assert.equal(adminGenerationApproval.status, 403);
   const customRoleApproval = await request(`/api/plans/${plan.id}/approval`, { method: "POST", cookie: assetCookie });
   assert.equal(customRoleApproval.status, 403);
 
@@ -599,6 +603,21 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.doesNotMatch(html, />Notes</);
   assert.doesNotMatch(html, />Shot library/);
   assert.doesNotMatch(html, />Brief &amp; prompt/);
+  const reportPage = await request("/reports", { cookie: creatorCookie });
+  assert.equal(reportPage.status, 200);
+  const reportHtml = await reportPage.text();
+  assert.match(reportHtml, /Production report/);
+  assert.match(reportHtml, /Generator workload/);
+  assert.match(reportHtml, /Docker integration shot/);
+  assert.match(reportHtml, /12/);
+  assert.match(reportHtml, /\$9\.00/);
+  const activityPage = await request("/activity", { cookie: creatorCookie });
+  assert.equal(activityPage.status, 200);
+  const activityHtml = await activityPage.text();
+  assert.match(activityHtml, /Workspace activity/);
+  assert.match(activityHtml, /Docker Supervisor/);
+  assert.match(activityHtml, /Approved/);
+  assert.match(activityHtml, /Uploaded generation-output\.png/);
   const filteredShotPage = await request(`/plans/${plan.id}?sequence_number=99&shot_number=7`, { cookie: supervisorCookie });
   assert.equal(filteredShotPage.status, 200);
   assert.match(await filteredShotPage.text(), /value="99"/);

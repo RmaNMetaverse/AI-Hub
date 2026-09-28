@@ -15,7 +15,7 @@ const SESSION_COOKIE = "ai_hub_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 export const ROLE_DEFINITIONS = {
-  Admin: "Full workspace control, including account management.",
+  Admin: "Workspace and account management, excluding production approvals.",
   Supervisor: "Manage production, assign work, and approve final media.",
   Generator: "Create shots, upload assets, and manage generations.",
   Creator: "Create plans, edit creative details, and manage generations.",
@@ -27,7 +27,7 @@ export function permissionsFor(role) {
   const definition = getWorkspaceRole(role);
   const canManageWorkflow = Boolean(definition?.can_manage_workflow);
   const canReviewPlans = Boolean(definition?.can_review_plans);
-  const canApprovePlans = ["Admin", "Supervisor"].includes(role);
+  const canApprovePlans = role === "Supervisor";
   const allowedStatuses = canApprovePlans
     ? ["WIP", "Approved"]
     : canManageWorkflow ? ["WIP"] : [];

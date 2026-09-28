@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#08090a" />
+    <meta name="description" content="AI Hub production reports" />
+    <title>Reports - AI Hub</title>
+    <link rel="stylesheet" href="<%= basePath %>/css/app.css" />
+    <%- include('partials/base-head') %>
+  </head>
+  <body>
+    <% const formatCost = value => `$${Number(value || 0).toFixed(Number(value || 0) < 0.01 ? 4 : 2)}`; %>
+    <% const formatBytes = bytes => { const value = Number(bytes || 0); if (!value) return '0 B'; const units = ['B','KB','MB','GB','TB']; const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1); return `${(value / (1024 ** index)).toFixed(index ? 1 : 0)} ${units[index]}`; }; %>
+    <div class="min-h-screen bg-[radial-gradient(circle_at_70%_-20%,rgba(214,255,69,0.06),transparent_32%)]">
+      <aside class="app-sidebar fixed inset-y-0 left-0 z-40 flex w-[232px] flex-col border-r border-white/[0.07] bg-[#0b0c0e]/95 p-4 backdrop-blur-xl lg:translate-x-0">
+        <a href="<%= basePath %>/" class="flex h-12 items-center gap-3 px-2"><div class="grid h-8 w-8 place-items-center rounded-xl bg-acid text-sm font-black text-black">A</div><div><div class="text-sm font-bold tracking-tight text-white">AI Hub</div><div class="text-[9px] uppercase tracking-[0.2em] text-zinc-600">Production OS</div></div></a>
+        <nav class="mt-6 space-y-1" aria-label="Main navigation"><a href="<%= basePath %>/" class="nav-item"><i data-lucide="layout-grid" class="h-[17px] w-[17px]"></i>Production</a><a href="<%= basePath %>/prompt-library" class="nav-item"><i data-lucide="book-open" class="h-[17px] w-[17px]"></i>Prompt Library</a><a href="<%= basePath %>/asset-library" class="nav-item"><i data-lucide="library" class="h-[17px] w-[17px]"></i>Asset Library</a></nav>
+        <div class="mt-7 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-700">Workspace</div>
+        <nav class="mt-2 space-y-1"><a href="<%= basePath %>/reports" class="nav-item active" aria-current="page"><i data-lucide="chart-no-axes-combined" class="h-[17px] w-[17px]"></i>Reports</a><a href="<%= basePath %>/activity" class="nav-item"><i data-lucide="activity" class="h-[17px] w-[17px]"></i>Activity</a></nav>
+        <div class="mt-auto px-3 py-2"><div class="truncate text-xs font-semibold text-zinc-300"><%= currentUser.display_name %></div><div class="mt-1 text-[10px] text-acid"><%= currentUser.role %></div><button class="workspace-logout mt-3 text-[10px] text-zinc-600 hover:text-white">Sign out</button></div>
+      </aside>
+
+      <div class="lg:pl-[232px]">
+        <header class="sticky top-0 z-30 flex h-[68px] items-center border-b border-white/[0.07] bg-[#08090a]/85 px-4 backdrop-blur-xl sm:px-6 xl:px-8"><button class="workspace-mobile-menu icon-button mr-3 lg:hidden" aria-label="Open navigation"><i data-lucide="menu" class="h-4 w-4"></i></button><div><div class="text-sm font-semibold">Reports</div><div class="mt-0.5 text-[9px] uppercase tracking-[0.14em] text-zinc-700"><%= project.code %> production intelligence</div></div><a href="<%= basePath %>/activity" class="ghost-button ml-auto h-9 px-3 text-xs"><i data-lucide="activity" class="h-3.5 w-3.5"></i>Activity</a></header>
+        <main class="mx-auto max-w-[1600px] px-4 pb-16 pt-8 sm:px-6 xl:px-8">
+          <div><div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-acid">Workspace performance</div><h1 class="mt-2 text-3xl font-semibold tracking-[-0.04em] sm:text-4xl">Production report</h1><p class="mt-3 max-w-3xl text-sm leading-6 text-zinc-500">Generation workload, token use, historical price snapshots, and plan-level production totals.</p></div>
+
+          <section class="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <% [['Plans',report.summary.plan_count,'clapperboard'],['Generations',report.summary.generation_count,'layers-3'],['Assets',report.summary.asset_count,'files'],['Tokens',Number(report.summary.token_count || 0).toLocaleString(),'coins'],['Financial cost',formatCost(report.summary.generation_cost),'circle-dollar-sign'],['Activities',report.summary.activity_count,'activity']].forEach(([label,value,icon]) => { %>
+              <article class="rounded-2xl border border-white/[0.07] bg-[#101113] p-4"><i data-lucide="<%= icon %>" class="h-4 w-4 text-acid"></i><div class="mt-4 text-[9px] font-semibold uppercase tracking-[0.13em] text-zinc-700"><%= label %></div><div class="mt-1.5 truncate text-xl font-semibold"><%= value %></div></article>
+            <% }) %>
+          </section>
+
+          <section class="mt-7 overflow-hidden rounded-3xl border border-white/[0.07] bg-[#101113]">
+            <div class="flex flex-col justify-between gap-4 border-b border-white/[0.07] p-5 sm:flex-row sm:items-end"><div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">People</div><h2 class="mt-2 text-xl font-semibold">Generator workload</h2><p class="mt-1 text-xs text-zinc-600">All accounts are included so production and supervisory work remain auditable.</p></div><input id="reportUserSearch" class="field h-10 w-full py-0 text-xs sm:w-64" placeholder="Search users or roles" /></div>
+            <div class="overflow-x-auto"><table class="w-full min-w-[900px] text-left text-xs"><thead class="bg-black/20 text-[9px] uppercase tracking-[0.12em] text-zinc-600"><tr><th class="px-5 py-3">User</th><th class="px-4 py-3">Role</th><th class="px-4 py-3 text-right">Plans</th><th class="px-4 py-3 text-right">Generations</th><th class="px-4 py-3 text-right">Approved</th><th class="px-4 py-3 text-right">Tokens</th><th class="px-4 py-3 text-right">Cost</th><th class="px-4 py-3 text-right">Activities</th><th class="px-5 py-3 text-right">Approvals</th></tr></thead><tbody id="reportUsersBody" class="divide-y divide-white/[0.055]">
+              <% report.users.forEach(user => { %><tr data-report-user="<%= (user.display_name + ' ' + user.username + ' ' + user.role).toLowerCase() %>" class="hover:bg-white/[0.018]"><td class="px-5 py-4"><div class="font-semibold text-zinc-200"><%= user.display_name %></div><div class="mt-1 text-[10px] text-zinc-700">@<%= user.username %><%= user.active ? '' : ' · inactive' %></div></td><td class="px-4 py-4"><span class="rounded-full border border-white/[0.08] px-2.5 py-1 text-[10px] text-zinc-400"><%= user.role %></span></td><td class="px-4 py-4 text-right"><%= user.plan_count %></td><td class="px-4 py-4 text-right font-semibold text-zinc-200"><%= user.generation_count %></td><td class="px-4 py-4 text-right"><%= user.approved_generation_count %></td><td class="px-4 py-4 text-right"><%= Number(user.token_count || 0).toLocaleString() %></td><td class="px-4 py-4 text-right font-semibold text-acid"><%= formatCost(user.generation_cost) %></td><td class="px-4 py-4 text-right"><%= user.activity_count %></td><td class="px-5 py-4 text-right"><%= user.approval_count %></td></tr><% }) %>
+            </tbody></table></div>
+          </section>
+
+          <section class="mt-7 overflow-hidden rounded-3xl border border-white/[0.07] bg-[#101113]">
+            <div class="flex flex-col justify-between gap-4 border-b border-white/[0.07] p-5 lg:flex-row lg:items-end"><div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Plans</div><h2 class="mt-2 text-xl font-semibold">Plan production cost</h2><p class="mt-1 text-xs text-zinc-600">Select a column heading to reorder the complete plan list.</p></div><div class="flex flex-col gap-2 sm:flex-row"><input id="reportPlanSearch" class="field h-10 w-full py-0 text-xs sm:w-64" placeholder="Search plans or numbers" /><select id="reportPlanSort" class="field h-10 w-full py-0 text-xs sm:w-52"><option value="generation_cost:desc">Highest cost</option><option value="generation_count:desc">Most generations</option><option value="asset_count:desc">Most assets</option><option value="token_count:desc">Most tokens</option><option value="approved_generation_count:desc">Most approvals</option><option value="updated_at:desc">Recently updated</option><option value="title:asc">Title A–Z</option></select></div></div>
+            <div class="overflow-x-auto"><table class="w-full min-w-[980px] text-left text-xs"><thead class="bg-black/20 text-[9px] uppercase tracking-[0.12em] text-zinc-600"><tr><th class="px-5 py-3">Plan</th><th class="px-4 py-3">Status</th><th class="px-4 py-3 text-right">Generations</th><th class="px-4 py-3 text-right">Approved</th><th class="px-4 py-3 text-right">Assets</th><th class="px-4 py-3 text-right">Asset size</th><th class="px-4 py-3 text-right">Tokens</th><th class="px-5 py-3 text-right">Cost</th></tr></thead><tbody id="reportPlansBody" class="divide-y divide-white/[0.055]">
+              <% report.plans.forEach(plan => { %><tr data-plan-row data-search="<%= (plan.title + ' ' + plan.shot_code + ' ' + plan.sequence_number + ' ' + plan.shot_number).toLowerCase() %>" data-title="<%= plan.title.toLowerCase() %>" data-generation_count="<%= plan.generation_count %>" data-approved_generation_count="<%= plan.approved_generation_count %>" data-asset_count="<%= plan.asset_count %>" data-token_count="<%= plan.token_count %>" data-generation_cost="<%= plan.generation_cost %>" data-updated_at="<%= plan.updated_at %>" class="hover:bg-white/[0.018]"><td class="px-5 py-4"><a href="<%= basePath %>/plans/<%= plan.id %>" class="font-semibold text-zinc-200 transition hover:text-acid"><%= plan.title %></a><div class="mt-1 text-[10px] text-acid">#Seq <%= plan.sequence_number %> / #Shot <%= plan.shot_number %></div></td><td class="px-4 py-4"><span class="rounded-full border border-white/[0.08] px-2.5 py-1 text-[10px]"><%= plan.status %></span></td><td class="px-4 py-4 text-right font-semibold"><%= plan.generation_count %></td><td class="px-4 py-4 text-right"><%= plan.approved_generation_count %></td><td class="px-4 py-4 text-right"><%= plan.asset_count %></td><td class="px-4 py-4 text-right"><%= formatBytes(plan.asset_bytes) %></td><td class="px-4 py-4 text-right"><%= Number(plan.token_count || 0).toLocaleString() %></td><td class="px-5 py-4 text-right font-semibold text-acid"><%= formatCost(plan.generation_cost) %></td></tr><% }) %>
+            </tbody></table></div>
+          </section>
+        </main>
+      </div>
+    </div>
+    <script>window.__AI_HUB_BASE__ = <%- JSON.stringify(basePath) %>;</script>
+    <script src="<%= basePath %>/vendor/lucide/lucide.js"></script>
+    <script src="<%= basePath %>/js/report.js" defer></script>
+  </body>
+</html>
