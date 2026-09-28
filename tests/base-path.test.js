@@ -85,7 +85,12 @@ test("AI Hub handles BASE_PATH=/AIHub properly", async () => {
   upload.append("sequence_number", "1");
   upload.append("shot_number", "1");
   upload.append("category", "Reference");
-  upload.append("file", new Blob(["upload through base path"], { type: "text/plain" }), "base-path.txt");
+  upload.append("file", new Blob(["upload through base path"], { type: "image/png" }), "base-path.png");
   const uploadResponse = await fetch(`${origin}/AIHub/api/plans/${plan.id}/resources`, { method: "POST", headers: { cookie }, body: upload });
   assert.equal(uploadResponse.status, 201);
+  const uploadedResource = await uploadResponse.json();
+  const plansResponse = await fetch(`${origin}/AIHub/api/plans?sequence_number=1&shot_number=1`, { headers: { cookie } });
+  assert.equal(plansResponse.status, 200);
+  const [coveredPlan] = await plansResponse.json();
+  assert.equal(coveredPlan.cover_url, `/AIHub/resources/${uploadedResource.id}/content`);
 });

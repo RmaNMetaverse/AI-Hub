@@ -342,6 +342,12 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   });
   assert.equal(outputResponse.status, 201);
   const outputResource = await outputResponse.json();
+  const latestMediaCoverResponse = await request(`/api/plans?sequence_number=${plan.sequence_number}&shot_number=${plan.shot_number}`, { cookie: creatorCookie });
+  const latestMediaPlan = (await latestMediaCoverResponse.json())[0];
+  assert.equal(latestMediaPlan.cover_id, outputResource.id);
+  assert.equal(latestMediaPlan.cover_kind, "image");
+  assert.equal(latestMediaPlan.cover_source, "latest");
+  assert.equal(latestMediaPlan.cover_url, `/resources/${outputResource.id}/content`);
 
   const firstGenerationResponse = await request(`/api/plans/${plan.id}/generations`, {
     method: "POST",
@@ -537,6 +543,31 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   const toggleGenApprove = await request(`/api/generations/${firstGeneration.id}/approval`, { method: "POST", cookie: supervisorCookie });
   assert.equal(toggleGenApprove.status, 200);
   assert.equal((await toggleGenApprove.json()).generation.status, "Approved");
+
+  const approvedCoverResponse = await request(`/api/plans?sequence_number=${plan.sequence_number}&shot_number=${plan.shot_number}`, { cookie: creatorCookie });
+  assert.equal((await approvedCoverResponse.json())[0].cover_source, "approved");
+
+  const invalidCoverForm = new FormData();
+  invalidCoverForm.append("file", new Blob(["not an image"], { type: "text/plain" }), "cover.txt");
+  const invalidCoverResponse = await fetch(`${origin}/api/plans/${plan.id}/cover`, { method: "POST", headers: { cookie: creatorCookie }, body: invalidCoverForm });
+  assert.equal(invalidCoverResponse.status, 400);
+
+  const customCoverBytes = new Uint8Array([255, 216, 255, 224, 65, 73, 72, 85, 66, 255, 217]);
+  const customCoverForm = new FormData();
+  customCoverForm.append("file", new Blob([customCoverBytes], { type: "image/jpeg" }), "custom-cover.jpg");
+  const customCoverResponse = await fetch(`${origin}/api/plans/${plan.id}/cover`, { method: "POST", headers: { cookie: creatorCookie }, body: customCoverForm });
+  const customCoverPlan = await customCoverResponse.json();
+  assert.equal(customCoverResponse.status, 201, JSON.stringify(customCoverPlan));
+  assert.equal(customCoverPlan.cover_source, "custom");
+  assert.match(customCoverPlan.cover_url, /^\/plan-covers\/\d+\/content$/);
+  const customCoverContent = await fetch(`${origin}${customCoverPlan.cover_url}`, { headers: { cookie: creatorCookie } });
+  assert.deepEqual(new Uint8Array(await customCoverContent.arrayBuffer()), customCoverBytes);
+
+  const removeCustomCoverResponse = await request(`/api/plans/${plan.id}/cover`, { method: "DELETE", cookie: creatorCookie });
+  assert.equal(removeCustomCoverResponse.status, 200);
+  const automaticCoverPlan = await removeCustomCoverResponse.json();
+  assert.equal(automaticCoverPlan.cover_source, "approved");
+  assert.equal(automaticCoverPlan.cover_id, outputResource.id);
 
   const shotPage = await request(`/plans/${plan.id}`, { cookie: supervisorCookie });
   assert.equal(shotPage.status, 200);

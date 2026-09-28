@@ -19,6 +19,7 @@ import {
   deleteGeneration,
   deleteLibraryAsset,
   deletePlan,
+  deletePlanCover,
   deletePrompt,
   deletePromptAsset,
   deleteResourceRecord,
@@ -27,6 +28,7 @@ import {
   getGeneration,
   getLibraryAsset,
   getPlan,
+  getPlanCover,
   getPrompt,
   getPromptAsset,
   getResource,
@@ -36,6 +38,7 @@ import {
   listPrompts,
   listResources,
   listWorkspaceRoles,
+  replacePlanCover,
   selectGeneration,
   updatePlan,
   updatePlanStatus,
@@ -68,12 +71,14 @@ import {
   cinematicThumbnailStorageKey,
   contentDisposition,
   maxUploadBytes,
+  maxCoverUploadBytes,
   removeStoredFile,
   resourceKind,
   safeOriginalName,
   storageKeyForFile,
   uploadAssetLibraryFile,
   uploadPromptAssetFile,
+  uploadPlanCoverFile,
   uploadResourceFile
 } from "./src/storage.js";
 
@@ -98,6 +103,16 @@ function resourceForClient(resource) {
   };
 }
 
+function planCardForClient(plan) {
+  if (!plan) return null;
+  const { custom_cover_id: _customCoverId, automatic_cover_id: _automaticCoverId, ...publicPlan } = plan;
+  const coverRoute = plan.cover_source === "custom" ? "/plan-covers" : "/resources";
+  return {
+    ...publicPlan,
+    cover_url: plan.cover_id ? `${basePath}${coverRoute}/${plan.cover_id}/content` : null
+  };
+}
+
 function planForClient(plan) {
   if (!plan) return null;
   const generationForClient = (generation) => generation ? {
@@ -106,6 +121,7 @@ function planForClient(plan) {
   } : null;
   return {
     ...plan,
+    cover_url: plan.cover_id ? `${basePath}${plan.cover_source === "custom" ? "/plan-covers" : "/resources"}/${plan.cover_id}/content` : null,
     resources: Array.isArray(plan.resources) ? plan.resources.map(resourceForClient) : plan.resources,
     generations: Array.isArray(plan.generations) ? plan.generations.map(generationForClient) : [],
     selected_generation: generationForClient(plan.selected_generation)
@@ -287,7 +303,7 @@ router.get("/", (request, response) => {
     workspaceRoles,
     generationCatalogs,
     numberFilters,
-    serializedPlans: JSON.stringify(dashboard.plans).replaceAll("<", "\\u003c"),
+    serializedPlans: JSON.stringify(dashboard.plans.map(planCardForClient)).replaceAll("<", "\\u003c"),
     serializedUser: JSON.stringify(request.user).replaceAll("<", "\\u003c"),
     serializedPermissions: JSON.stringify(request.permissions).replaceAll("<", "\\u003c")
   });
@@ -361,7 +377,7 @@ router.get("/plans/:id", (request, response) => {
 });
 
 router.get("/api/plans", (request, response) => {
-  try { response.json(getDashboard(request.query).plans); }
+  try { response.json(getDashboard(request.query).plans.map(planCardForClient)); }
   catch (error) { response.status(400).json({ error: error.message }); }
 });
 
@@ -521,6 +537,67 @@ router.get("/api/plans/:id/resources", (request, response) => {
   });
 });
 
+function planCardById(id) {
+  return planCardForClient(getDashboard().plans.find((plan) => plan.id === id));
+}
+
+router.post("/api/plans/:id/cover", requirePermission("canEditPlans"), (request, response) => {
+  const plan = getPlan(Number(request.params.id));
+  if (!plan) return response.status(404).json({ error: "Plan not found" });
+
+  uploadPlanCoverFile(request, response, async (uploadError) => {
+    let storageKey;
+    try {
+      if (uploadError) {
+        const status = uploadError.code === "LIMIT_FILE_SIZE" ? 413 : 400;
+        const message = uploadError.code === "LIMIT_FILE_SIZE"
+          ? `Plan covers must be smaller than ${Math.round(maxCoverUploadBytes / 1024 / 1024)} MB`
+          : uploadError.message;
+        return response.status(status).json({ error: message });
+      }
+      if (!request.file) return response.status(400).json({ error: "Choose an image to use as the cover" });
+      storageKey = storageKeyForFile(request.file.path);
+      if (!request.file.size) {
+        await removeStoredFile(storageKey);
+        return response.status(400).json({ error: "Empty images cannot be used as covers" });
+      }
+      const originalName = safeOriginalName(request.file.originalname);
+      if (resourceKind(request.file.mimetype, originalName) !== "image") {
+        await removeStoredFile(storageKey);
+        return response.status(400).json({ error: "Plan covers must be image files" });
+      }
+      const saved = replacePlanCover({
+        planId: plan.id,
+        uploadedBy: request.user.id,
+        originalName,
+        storageKey,
+        mimeType: String(request.file.mimetype || "image/jpeg").slice(0, 160),
+        sizeBytes: request.file.size,
+        checksumSha256: await checksumFile(request.file.path)
+      });
+      if (saved.previousStorageKey && saved.previousStorageKey !== storageKey) {
+        await removeStoredFile(saved.previousStorageKey).catch(() => {});
+      }
+      response.status(201).json(planCardById(plan.id));
+    } catch (error) {
+      if (storageKey) await removeStoredFile(storageKey).catch(() => {});
+      response.status(500).json({ error: "The plan cover could not be saved" });
+    }
+  });
+});
+
+router.delete("/api/plans/:id/cover", requirePermission("canEditPlans"), async (request, response) => {
+  try {
+    const plan = getPlan(Number(request.params.id));
+    if (!plan) return response.status(404).json({ error: "Plan not found" });
+    const current = deletePlanCover(plan.id);
+    if (current) await removeStoredFile(current.storage_key);
+    response.json(planCardById(plan.id));
+  } catch (_error) {
+    response.status(500).json({ error: "The custom cover could not be removed" });
+  }
+});
+
 router.post("/api/plans/:id/resources", requirePermission("canEditPlans"), (request, response) => {
   const plan = getPlan(Number(request.params.id));
   if (!plan) return response.status(404).json({ error: "Plan not found" });
@@ -648,6 +725,12 @@ router.get("/resources/:id/content", async (request, response) => {
   const resource = getResource(Number(request.params.id));
   if (!resource) return response.status(404).json({ error: "Resource not found" });
   await streamStoredFile(resource, request, response);
+});
+
+router.get("/plan-covers/:id/content", async (request, response) => {
+  const cover = getPlanCover(Number(request.params.id));
+  if (!cover) return response.status(404).json({ error: "Plan cover not found" });
+  await streamStoredFile(cover, request, response);
 });
 
 function receiveLibraryUpload(upload, request, response, save) {

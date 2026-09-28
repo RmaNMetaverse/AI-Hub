@@ -116,6 +116,20 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS plan_covers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id INTEGER NOT NULL UNIQUE REFERENCES ai_plans(id) ON DELETE CASCADE,
+    uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    original_name TEXT NOT NULL,
+    storage_key TEXT NOT NULL UNIQUE,
+    mime_type TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'image',
+    size_bytes INTEGER NOT NULL,
+    checksum_sha256 TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS generation_resources (
     generation_id INTEGER NOT NULL REFERENCES generations(id) ON DELETE CASCADE,
     resource_id INTEGER NOT NULL REFERENCES resources(id) ON DELETE CASCADE,
@@ -228,6 +242,7 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS plan_approvals_plan_idx ON plan_approvals(plan_id, approved_at DESC);
+  CREATE INDEX IF NOT EXISTS plan_covers_plan_idx ON plan_covers(plan_id);
   CREATE INDEX IF NOT EXISTS prompt_library_updated_idx ON prompt_library(updated_at DESC);
   CREATE INDEX IF NOT EXISTS prompt_assets_prompt_idx ON prompt_assets(prompt_id);
   CREATE INDEX IF NOT EXISTS asset_library_category_idx ON asset_library(category, created_at DESC);
@@ -604,11 +619,56 @@ export function getDashboard(input = {}) {
   const project = db.prepare("SELECT * FROM projects ORDER BY id LIMIT 1").get();
   const conditions = Object.keys(filters).map((key) => `p.${key} = @${key}`);
   const plans = db.prepare(`
-    SELECT p.*, (SELECT MAX(g.created_at) FROM generations g WHERE g.plan_id = p.id) AS generated_at,
-      COALESCE((SELECT MAX(g.created_at) FROM generations g WHERE g.plan_id = p.id), p.created_at) AS sort_at,
-      (SELECT COUNT(*) FROM generations g WHERE g.plan_id = p.id) AS generation_count
-    FROM ai_plans p WHERE p.project_id = @project_id ${conditions.length ? `AND ${conditions.join(" AND ")}` : ""}
-    ORDER BY sort_at DESC, p.id DESC
+    WITH cover_candidates AS (
+      SELECT p.*,
+        (SELECT pc.id FROM plan_covers pc WHERE pc.plan_id = p.id) AS custom_cover_id,
+        COALESCE(
+          (
+            SELECT r.id
+            FROM generations g
+            JOIN generation_resources gr ON gr.generation_id = g.id
+            JOIN resources r ON r.id = gr.resource_id
+            WHERE g.plan_id = p.id AND g.status = 'Approved' AND r.kind IN ('image', 'video')
+            ORDER BY g.created_at DESC, g.id DESC, CASE WHEN gr.role = 'Output' THEN 0 ELSE 1 END, r.created_at DESC, r.id DESC
+            LIMIT 1
+          ),
+          (
+            SELECT r.id FROM resources r
+            WHERE r.plan_id = p.id AND r.kind = 'image'
+            ORDER BY r.created_at DESC, r.id DESC
+            LIMIT 1
+          ),
+          (
+            SELECT r.id FROM resources r
+            WHERE r.plan_id = p.id AND r.kind = 'video'
+            ORDER BY r.created_at DESC, r.id DESC
+            LIMIT 1
+          )
+        ) AS automatic_cover_id
+      FROM ai_plans p
+      WHERE p.project_id = @project_id ${conditions.length ? `AND ${conditions.join(" AND ")}` : ""}
+    )
+    SELECT c.*,
+      CASE WHEN pc.id IS NOT NULL THEN pc.id ELSE r.id END AS cover_id,
+      CASE WHEN pc.id IS NOT NULL THEN pc.kind ELSE r.kind END AS cover_kind,
+      CASE WHEN pc.id IS NOT NULL THEN pc.mime_type ELSE r.mime_type END AS cover_mime_type,
+      CASE
+        WHEN pc.id IS NOT NULL THEN 'custom'
+        WHEN r.id IS NULL THEN NULL
+        WHEN EXISTS (
+          SELECT 1 FROM generation_resources gr
+          JOIN generations g ON g.id = gr.generation_id
+          WHERE gr.resource_id = r.id AND g.plan_id = c.id AND g.status = 'Approved'
+        ) THEN 'approved'
+        ELSE 'latest'
+      END AS cover_source,
+      (SELECT MAX(g.created_at) FROM generations g WHERE g.plan_id = c.id) AS generated_at,
+      COALESCE((SELECT MAX(g.created_at) FROM generations g WHERE g.plan_id = c.id), c.created_at) AS sort_at,
+      (SELECT COUNT(*) FROM generations g WHERE g.plan_id = c.id) AS generation_count
+    FROM cover_candidates c
+    LEFT JOIN plan_covers pc ON pc.id = c.custom_cover_id
+    LEFT JOIN resources r ON r.id = c.automatic_cover_id
+    ORDER BY sort_at DESC, c.id DESC
   `).all({ project_id: project.id, ...filters }).map(normalizePlan);
   return { project, plans };
 }
@@ -628,8 +688,13 @@ export function getPlan(id) {
     WHERE pa.plan_id = ?
     ORDER BY pa.approved_at DESC, pa.id DESC LIMIT 1
   `).get(id) || null;
+  const card = getDashboard({ sequence_number: plan.sequence_number, shot_number: plan.shot_number }).plans.find((item) => item.id === plan.id) || {};
   return {
     ...normalizePlan(plan),
+    cover_id: card.cover_id || null,
+    cover_kind: card.cover_kind || null,
+    cover_mime_type: card.cover_mime_type || null,
+    cover_source: card.cover_source || null,
     generated_at: generations[0]?.created_at || null,
     sort_at: generations[0]?.created_at || plan.created_at,
     generations,
@@ -1034,9 +1099,52 @@ export function deleteGeneration(id) {
 export function deletePlan(id) {
   const plan = db.prepare("SELECT id FROM ai_plans WHERE id = ?").get(id);
   if (!plan) throw new Error("Plan not found");
-  const storageKeys = db.prepare("SELECT storage_key FROM resources WHERE plan_id = ?").all(id).map((item) => item.storage_key);
+  const storageKeys = [
+    ...db.prepare("SELECT storage_key FROM resources WHERE plan_id = ?").all(id),
+    ...db.prepare("SELECT storage_key FROM plan_covers WHERE plan_id = ?").all(id)
+  ].map((item) => item.storage_key);
   db.prepare("DELETE FROM ai_plans WHERE id = ?").run(id);
   return storageKeys;
+}
+
+export function getPlanCover(id) {
+  return db.prepare("SELECT * FROM plan_covers WHERE id = ?").get(id) || null;
+}
+
+export function getPlanCoverByPlanId(planId) {
+  return db.prepare("SELECT * FROM plan_covers WHERE plan_id = ?").get(planId) || null;
+}
+
+export function replacePlanCover(input) {
+  const current = getPlanCoverByPlanId(input.planId);
+  db.prepare(`
+    INSERT INTO plan_covers (
+      plan_id, uploaded_by, original_name, storage_key, mime_type, kind,
+      size_bytes, checksum_sha256
+    ) VALUES (
+      @planId, @uploadedBy, @originalName, @storageKey, @mimeType, 'image',
+      @sizeBytes, @checksumSha256
+    )
+    ON CONFLICT(plan_id) DO UPDATE SET
+      uploaded_by = excluded.uploaded_by,
+      original_name = excluded.original_name,
+      storage_key = excluded.storage_key,
+      mime_type = excluded.mime_type,
+      kind = 'image',
+      size_bytes = excluded.size_bytes,
+      checksum_sha256 = excluded.checksum_sha256,
+      updated_at = CURRENT_TIMESTAMP
+  `).run(input);
+  db.prepare("UPDATE ai_plans SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(input.planId);
+  return { cover: getPlanCoverByPlanId(input.planId), previousStorageKey: current?.storage_key || null };
+}
+
+export function deletePlanCover(planId) {
+  const current = getPlanCoverByPlanId(planId);
+  if (!current) return null;
+  db.prepare("DELETE FROM plan_covers WHERE plan_id = ?").run(planId);
+  db.prepare("UPDATE ai_plans SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(planId);
+  return current;
 }
 
 export function createResource(input) {

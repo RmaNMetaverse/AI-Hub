@@ -80,6 +80,27 @@ export const uploadResourceFile = multer({
   defParamCharset: "utf8"
 }).single("file");
 
+export const maxCoverUploadBytes = Math.min(maxUploadBytes, 25 * 1024 * 1024);
+
+export const uploadPlanCoverFile = multer({
+  storage: uploadStorage("plan-covers"),
+  limits: {
+    fileSize: maxCoverUploadBytes,
+    files: 1,
+    fields: 1,
+    parts: 2,
+    fieldNameSize: 80,
+    headerPairs: 100
+  },
+  fileFilter(_request, file, callback) {
+    if (!String(file.mimetype || "").toLowerCase().startsWith("image/")) {
+      return callback(new Error("Plan covers must be image files"));
+    }
+    callback(null, true);
+  },
+  defParamCharset: "utf8"
+}).single("file");
+
 const libraryLimits = {
   fileSize: maxUploadBytes,
   files: 1,

@@ -53,12 +53,28 @@ function generationDate(value) {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
+function planCoverMarkup(plan) {
+  if (plan.cover_url && plan.cover_kind === "image") {
+    return `<img src="${escapeHtml(plan.cover_url)}" alt="" loading="lazy" class="h-full w-full object-cover" />`;
+  }
+  if (plan.cover_url && plan.cover_kind === "video") {
+    return `<video data-plan-cover-video src="${escapeHtml(plan.cover_url)}" muted playsinline preload="auto" class="pointer-events-none h-full w-full object-cover"></video>`;
+  }
+  return `<div class="grid h-full place-items-center bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.045),transparent_45%)] text-center">
+    <div class="text-zinc-700">
+      <svg viewBox="0 0 64 64" aria-hidden="true" class="mx-auto h-12 w-12" fill="none"><rect x="9" y="13" width="46" height="38" rx="7" stroke="currentColor" stroke-width="2"/><path d="m15 44 11-12 8 8 6-7 9 11M23 25h.01M12 10l40 44" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div class="mt-2 text-[10px] font-semibold uppercase tracking-[0.2em]">No media</div>
+    </div>
+  </div>`;
+}
+
 function shotCard(plan) {
   const query = window.shotNavigation.query();
   return `
     <article class="plan-card group relative" data-plan-id="${plan.id}">
       <a href="${window.__AI_HUB_BASE__ || ""}/plans/${plan.id}${query ? `?${query}` : ""}" class="block">
       <div class="relative aspect-video overflow-hidden bg-[#0d0f12]">
+        ${planCoverMarkup(plan)}
         <span class="status-pill absolute left-3 top-3 ${statusClass(plan.status)} backdrop-blur-xl">${escapeHtml(plan.status)}</span>
         ${plan.issue ? `<div class="absolute inset-x-3 bottom-3 rounded-lg bg-black/70 p-2 text-xs text-orange-200">${escapeHtml(plan.issue)}</div>` : ""}
       </div>
@@ -70,7 +86,8 @@ function shotCard(plan) {
         <div class="mt-2 text-[11px] text-zinc-600">${plan.generated_at ? "Generated" : "Created"} ${escapeHtml(generationDate(plan.sort_at))}</div>
       </div>
       </a>
-      ${state.permissions.canDeletePlans ? `<button class="delete-plan-card icon-button absolute right-3 top-3 z-10 border-red-300/10 bg-black/70 text-red-300/70 hover:text-red-200" aria-label="Delete ${escapeHtml(plan.title)}" title="Delete shot"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ""}
+      ${state.permissions.canEditPlans ? `<button class="cover-plan-card icon-button absolute right-3 top-3 z-10 bg-black/70 text-zinc-300 hover:text-acid" aria-label="Change cover for ${escapeHtml(plan.title)}" title="Change cover art"><i data-lucide="image-plus" class="h-3.5 w-3.5"></i></button>` : ""}
+      ${state.permissions.canDeletePlans ? `<button class="delete-plan-card icon-button absolute right-3 top-12 z-10 border-red-300/10 bg-black/70 text-red-300/70 hover:text-red-200" aria-label="Delete ${escapeHtml(plan.title)}" title="Delete shot"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ""}
     </article>`;
 }
 
@@ -115,6 +132,18 @@ function render() {
     render();
     showToast("Shot deleted");
   }));
+  els.grid.querySelectorAll(".cover-plan-card").forEach((button) => button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const id = Number(button.closest("[data-plan-id]").dataset.planId);
+    openCoverEditor(id);
+  }));
+  els.grid.querySelectorAll("[data-plan-cover-video]").forEach((video) => {
+    video.addEventListener("loadedmetadata", () => {
+      if (Number.isFinite(video.duration) && video.duration > 0) video.currentTime = Math.min(0.08, video.duration / 10);
+    }, { once: true });
+    video.addEventListener("seeked", () => video.pause(), { once: true });
+  });
   lucide.createIcons();
 }
 
@@ -180,6 +209,162 @@ els.form.addEventListener("submit", async (event) => {
   showToast("AI Plan created");
   setTimeout(() => openPlan(result.id), 260);
 });
+
+const coverModal = document.querySelector("#coverModal");
+const coverModalCard = document.querySelector("#coverModalCard");
+const coverCanvas = document.querySelector("#coverCropCanvas");
+const coverContext = coverCanvas?.getContext("2d");
+const coverFileInput = document.querySelector("#coverFileInput");
+const coverZoomInput = document.querySelector("#coverZoomInput");
+const saveCoverButton = document.querySelector("#saveCoverButton");
+const coverEditor = { planId: null, image: null, offsetX: 0, offsetY: 0, dragging: false, pointerX: 0, pointerY: 0 };
+
+function drawCoverCrop() {
+  if (!coverContext || !coverEditor.image) return;
+  const image = coverEditor.image;
+  const zoom = Number(coverZoomInput.value || 1);
+  const baseScale = Math.max(coverCanvas.width / image.naturalWidth, coverCanvas.height / image.naturalHeight);
+  const width = image.naturalWidth * baseScale * zoom;
+  const height = image.naturalHeight * baseScale * zoom;
+  const maxX = Math.max(0, (width - coverCanvas.width) / 2);
+  const maxY = Math.max(0, (height - coverCanvas.height) / 2);
+  coverEditor.offsetX = Math.max(-maxX, Math.min(maxX, coverEditor.offsetX));
+  coverEditor.offsetY = Math.max(-maxY, Math.min(maxY, coverEditor.offsetY));
+  coverContext.clearRect(0, 0, coverCanvas.width, coverCanvas.height);
+  coverContext.imageSmoothingEnabled = true;
+  coverContext.imageSmoothingQuality = "high";
+  coverContext.drawImage(image, (coverCanvas.width - width) / 2 + coverEditor.offsetX, (coverCanvas.height - height) / 2 + coverEditor.offsetY, width, height);
+}
+
+function resetCoverCrop() {
+  coverEditor.image = null;
+  coverEditor.offsetX = 0;
+  coverEditor.offsetY = 0;
+  if (coverContext) coverContext.clearRect(0, 0, coverCanvas.width, coverCanvas.height);
+  if (coverZoomInput) {
+    coverZoomInput.value = "1";
+    coverZoomInput.disabled = true;
+  }
+  if (saveCoverButton) saveCoverButton.disabled = true;
+  document.querySelector("#coverCropEmpty")?.classList.remove("hidden");
+  if (coverFileInput) coverFileInput.value = "";
+}
+
+function openCoverEditor(id) {
+  if (!coverModal) return;
+  const plan = state.plans.find((item) => item.id === Number(id));
+  if (!plan) return;
+  coverEditor.planId = plan.id;
+  resetCoverCrop();
+  document.querySelector("#coverModalTitle").textContent = `Cover art · #Seq ${plan.sequence_number} / #Shot ${plan.shot_number}`;
+  document.querySelector("#removeCustomCoverButton")?.classList.toggle("hidden", plan.cover_source !== "custom");
+  coverModal.classList.remove("hidden", "pointer-events-none");
+  coverModal.classList.add("grid");
+  coverModal.setAttribute("aria-hidden", "false");
+  requestAnimationFrame(() => coverModalCard.classList.add("open"));
+}
+
+function closeCoverEditor() {
+  if (!coverModal) return;
+  coverModalCard.classList.remove("open");
+  setTimeout(() => {
+    coverModal.classList.add("hidden", "pointer-events-none");
+    coverModal.classList.remove("grid");
+    coverModal.setAttribute("aria-hidden", "true");
+    resetCoverCrop();
+  }, 180);
+}
+
+document.querySelector("#chooseCoverImageButton")?.addEventListener("click", () => coverFileInput.click());
+coverFileInput?.addEventListener("change", () => {
+  const file = coverFileInput.files?.[0];
+  if (!file) return;
+  if (!file.type.startsWith("image/")) return showToast("Choose an image file for the cover");
+  const imageUrl = URL.createObjectURL(file);
+  const image = new Image();
+  image.onload = () => {
+    URL.revokeObjectURL(imageUrl);
+    coverEditor.image = image;
+    coverEditor.offsetX = 0;
+    coverEditor.offsetY = 0;
+    coverZoomInput.value = "1";
+    coverZoomInput.disabled = false;
+    saveCoverButton.disabled = false;
+    document.querySelector("#coverCropEmpty")?.classList.add("hidden");
+    drawCoverCrop();
+  };
+  image.onerror = () => {
+    URL.revokeObjectURL(imageUrl);
+    showToast("This image could not be opened");
+  };
+  image.src = imageUrl;
+});
+coverZoomInput?.addEventListener("input", drawCoverCrop);
+
+coverCanvas?.addEventListener("pointerdown", (event) => {
+  if (!coverEditor.image) return;
+  coverEditor.dragging = true;
+  coverEditor.pointerX = event.clientX;
+  coverEditor.pointerY = event.clientY;
+  coverCanvas.setPointerCapture(event.pointerId);
+  coverCanvas.style.cursor = "grabbing";
+});
+coverCanvas?.addEventListener("pointermove", (event) => {
+  if (!coverEditor.dragging) return;
+  const rect = coverCanvas.getBoundingClientRect();
+  coverEditor.offsetX += (event.clientX - coverEditor.pointerX) * (coverCanvas.width / rect.width);
+  coverEditor.offsetY += (event.clientY - coverEditor.pointerY) * (coverCanvas.height / rect.height);
+  coverEditor.pointerX = event.clientX;
+  coverEditor.pointerY = event.clientY;
+  drawCoverCrop();
+});
+function finishCoverDrag(event) {
+  if (!coverEditor.dragging) return;
+  coverEditor.dragging = false;
+  coverCanvas.releasePointerCapture?.(event.pointerId);
+  coverCanvas.style.cursor = "grab";
+}
+coverCanvas?.addEventListener("pointerup", finishCoverDrag);
+coverCanvas?.addEventListener("pointercancel", finishCoverDrag);
+
+saveCoverButton?.addEventListener("click", async () => {
+  if (!coverEditor.image || !coverEditor.planId) return;
+  saveCoverButton.disabled = true;
+  saveCoverButton.querySelector("span").textContent = "Saving...";
+  const blob = await new Promise((resolve) => coverCanvas.toBlob(resolve, "image/jpeg", 0.9));
+  if (!blob) {
+    saveCoverButton.disabled = false;
+    saveCoverButton.querySelector("span").textContent = "Save cover";
+    return showToast("The cropped cover could not be created");
+  }
+  const form = new FormData();
+  form.append("file", blob, `plan-${coverEditor.planId}-cover.jpg`);
+  const response = await fetch(`/api/plans/${coverEditor.planId}/cover`, { method: "POST", body: form });
+  const payload = await response.json().catch(() => ({}));
+  saveCoverButton.querySelector("span").textContent = "Save cover";
+  if (!response.ok) {
+    saveCoverButton.disabled = false;
+    return showToast(payload.error || "Could not save this cover");
+  }
+  state.plans = state.plans.map((plan) => plan.id === payload.id ? payload : plan);
+  closeCoverEditor();
+  render();
+  showToast("Custom cover saved");
+});
+
+document.querySelector("#removeCustomCoverButton")?.addEventListener("click", async () => {
+  if (!coverEditor.planId) return;
+  const response = await fetch(`/api/plans/${coverEditor.planId}/cover`, { method: "DELETE" });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) return showToast(payload.error || "Could not restore the automatic cover");
+  state.plans = state.plans.map((plan) => plan.id === payload.id ? payload : plan);
+  closeCoverEditor();
+  render();
+  showToast("Automatic cover restored");
+});
+document.querySelector("#closeCoverModalButton")?.addEventListener("click", closeCoverEditor);
+document.querySelector("#cancelCoverModalButton")?.addEventListener("click", closeCoverEditor);
+document.querySelector("#coverModalBackdrop")?.addEventListener("click", closeCoverEditor);
 
 const accountButton = document.querySelector("#accountButton");
 const accountMenu = document.querySelector("#accountMenu");
@@ -491,7 +676,8 @@ document.querySelector("#catalogItemForm")?.addEventListener("submit", async (ev
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    if (catalogsModal && !catalogsModal.classList.contains("hidden")) closeCatalogsModal();
+    if (coverModal && !coverModal.classList.contains("hidden")) closeCoverEditor();
+    else if (catalogsModal && !catalogsModal.classList.contains("hidden")) closeCatalogsModal();
     else if (usersModal && !usersModal.classList.contains("hidden")) closeUsersModal();
     else if (!els.modal.classList.contains("hidden")) closeModal();
   }
