@@ -168,6 +168,34 @@
   .detail-section {
     @apply border-t border-white/[0.08] py-6;
   }
+
+  .file-drop-zone {
+    position: relative;
+    transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+  }
+
+  .file-drop-zone.file-drop-active {
+    border-color: rgba(214, 255, 69, 0.8) !important;
+    background-color: rgba(214, 255, 69, 0.08) !important;
+    box-shadow: 0 0 0 3px rgba(214, 255, 69, 0.18), inset 0 0 0 1px rgba(214, 255, 69, 0.22);
+  }
+
+  .file-drop-zone.file-drop-active::after {
+    content: "Drop files to upload";
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    border: 2px dashed rgba(214, 255, 69, 0.8);
+    border-radius: inherit;
+    color: #d6ff45;
+    background: rgba(8, 9, 10, 0.18);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
 }
 
 @media (min-width: 640px) {
