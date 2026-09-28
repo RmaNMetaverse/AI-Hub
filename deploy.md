@@ -260,7 +260,7 @@ You can now open `http://<serverIp>/AIHub` in your browser.
 
 ```bash
 cd /opt/ai-hub
-git pull
+sudo git pull
 docker compose --profile production up --build -d production
 sudo nginx -t
 sudo systemctl reload nginx
