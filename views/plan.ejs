@@ -24,7 +24,7 @@
           <div class="hidden sm:block"><div class="text-sm font-bold tracking-tight">AI Hub</div><div class="text-[8px] uppercase tracking-[0.18em] text-zinc-700">Production OS</div></div>
         </a>
         <div class="mx-4 hidden h-6 w-px bg-white/[0.08] sm:block"></div>
-        <a data-shot-navigation href="<%= basePath %>/<%= filterQuery ? '?' + filterQuery : '' %>" class="hidden items-center gap-2 text-xs font-medium text-zinc-500 transition hover:text-white sm:flex"><i data-lucide="arrow-left" class="h-4 w-4"></i>Shot grid</a>
+        <a data-shot-navigation href="<%= basePath %>/<%= filterQuery ? '?' + filterQuery : '' %>" class="plan-header-back" aria-label="Back to Production"><i data-lucide="arrow-left" class="h-4 w-4"></i><span class="hidden sm:inline">Back to Production</span><span class="sm:hidden">Production</span></a>
         <div class="ml-auto flex items-center gap-2">
           <div class="hidden items-center rounded-full border border-white/[0.08] bg-white/[0.03] p-1 sm:flex">
             <a id="previousShot" href="<%= previousPlan ? basePath + '/plans/' + previousPlan.id : '#' %><%= previousPlan && filterQuery ? '?' + filterQuery : '' %>" class="icon-button h-8 w-8 border-0 bg-transparent <%= previousPlan ? '' : 'hidden' %>" title="<%= previousPlan ? 'Previous: ' + previousPlan.title : 'Previous shot' %>" aria-label="Previous shot"><i data-lucide="chevron-left" class="h-4 w-4"></i></a>
@@ -48,7 +48,6 @@
       </header>
 
       <main class="mx-auto max-w-[1560px] px-4 pb-14 pt-5 sm:px-6 xl:px-8">
-        <a href="<%= basePath %>/<%= filterQuery ? '?' + filterQuery : '' %>" class="back-to-production-button"><i data-lucide="arrow-left" class="h-4 w-4"></i>Back to Production</a>
         <div class="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
           <div>
             <div class="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.15em] text-zinc-700">

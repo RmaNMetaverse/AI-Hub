@@ -664,7 +664,8 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.match(html, /reference-frame\.png/);
   assert.match(html, /\/js\/plan-detail\.js/);
   assert.doesNotMatch(html, /id="shotNavigationForm"/);
-  assert.match(html, /Back to Production/);
+  assert.match(html, /class="plan-header-back" aria-label="Back to Production"/);
+  assert.doesNotMatch(html, /back-to-production-button/);
   assert.match(html, /id="generationSequenceNumberInput"/);
   assert.match(html, /id="generationShotNumberInput"/);
   assert.doesNotMatch(html, /id="generationUploadRole"/);
