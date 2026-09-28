@@ -16,8 +16,6 @@
     <% const formatBytes = bytes => { const value = Number(bytes || 0); if (!value) return '0 B'; const units = ['B','KB','MB','GB','TB']; const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1); return `${(value / (1024 ** index)).toFixed(index ? 1 : 0)} ${units[index]}`; }; %>
     <% const formatCost = value => Number(value || 0) > 0 ? `$${Number(value).toFixed(Number(value) < 0.01 ? 4 : 2)}` : 'Not tracked'; %>
     <% const resourceIcons = { image: 'image', video: 'file-video-2', audio: 'audio-lines', document: 'file-text', archive: 'archive', other: 'file-box' }; %>
-    <% const selectedGeneration = plan.selected_generation; %>
-    <% const selectedOutput = selectedGeneration && selectedGeneration.resources.find(resource => resource.role === 'Output'); %>
     <% const totalGenerationCost = plan.generations.reduce((total, generation) => total + Number(generation.generation_cost || 0), 0); %>
 
     <div class="min-h-screen bg-[radial-gradient(circle_at_55%_-20%,rgba(214,255,69,0.055),transparent_35%)]">
@@ -68,43 +66,6 @@
             <% if (permissions.canDeletePlans) { %><button id="deleteShotButton" class="rounded-full border border-red-300/15 px-3 py-1.5 text-red-300/60 transition hover:border-red-300/30 hover:text-red-200"><i data-lucide="trash-2" class="mr-1 inline h-3 w-3"></i>Delete shot</button><% } %>
           </div>
         </div>
-
-        <section class="mt-6 overflow-hidden rounded-[28px] border <%= selectedGeneration ? 'border-acid/20 bg-acid/[0.025]' : 'border-white/[0.08] bg-[#101113]' %>">
-          <div class="grid lg:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.55fr)]">
-            <div class="relative aspect-video min-h-[300px] overflow-hidden bg-black/40 lg:min-h-[440px]">
-              <% if (selectedOutput && selectedOutput.kind === 'image' && !selectedOutput.mime_type.includes('svg')) { %>
-                <img src="<%= selectedOutput.content_url %>" alt="Selected generation <%= selectedGeneration.label %>" class="h-full w-full object-contain" />
-              <% } else if (selectedOutput && selectedOutput.kind === 'video') { %>
-                <video src="<%= selectedOutput.content_url %>" controls preload="metadata" class="h-full w-full object-contain"></video>
-              <% } else if (selectedOutput && selectedOutput.kind === 'audio') { %>
-                <div class="flex h-full flex-col items-center justify-center p-8"><span class="grid h-20 w-20 place-items-center rounded-3xl bg-acid/10 text-acid"><i data-lucide="audio-lines" class="h-9 w-9"></i></span><audio src="<%= selectedOutput.content_url %>" controls preload="metadata" class="mt-7 w-full max-w-lg"></audio></div>
-              <% } else { %>
-                <div class="media-frame absolute inset-0" style="--image-position:<%= plan.image_position %>"></div>
-                <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20"></div>
-                <% if (selectedGeneration) { %><div class="absolute inset-x-0 bottom-0 p-5 text-xs text-white/55 sm:p-7"><i data-lucide="circle-dashed" class="mr-2 inline h-4 w-4"></i>No output file is linked yet. Open the generation to attach one.</div><% } %>
-              <% } %>
-              <span class="absolute left-4 top-4 inline-flex items-center gap-2 rounded-full border border-acid/25 bg-black/65 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-acid backdrop-blur"><i data-lucide="<%= selectedGeneration ? 'badge-check' : 'circle-dashed' %>" class="h-3.5 w-3.5"></i><%= selectedGeneration ? 'Current final version' : 'Final preview' %></span>
-            </div>
-
-            <div class="flex min-h-[360px] flex-col p-6 sm:p-8">
-              <% if (selectedGeneration) { %>
-                <div class="flex items-start justify-between gap-4">
-                  <div><div class="text-[10px] font-semibold uppercase tracking-[0.15em] text-acid">Selected generation</div><h2 class="mt-2 text-3xl font-semibold tracking-[-0.04em]"><%= selectedGeneration.version_label %></h2><div class="mt-2 text-xs text-zinc-500"><%= selectedGeneration.model %></div></div>
-                  <div class="rounded-2xl border border-white/[0.08] bg-black/20 px-3 py-2 text-center"><div class="text-xs font-semibold"><%= selectedGeneration.platform_name || 'Unknown' %></div><div class="mt-1 text-[8px] uppercase tracking-wider text-zinc-700">Platform</div></div>
-                </div>
-                <p class="mt-6 line-clamp-5 text-sm leading-7 text-zinc-400"><%= selectedGeneration.prompt || 'No prompt recorded for this generation.' %></p>
-                <div class="mt-auto grid grid-cols-3 gap-2 pt-7">
-                  <div class="rounded-2xl border border-white/[0.06] bg-black/15 p-3"><div class="text-[8px] uppercase tracking-wider text-zinc-700">Cost</div><div class="mt-1.5 text-xs font-semibold"><%= formatCost(selectedGeneration.generation_cost) %></div></div>
-                  <div class="rounded-2xl border border-white/[0.06] bg-black/15 p-3"><div class="text-[8px] uppercase tracking-wider text-zinc-700">Tokens</div><div class="mt-1.5 text-xs font-semibold"><%= Number(selectedGeneration.total_tokens || 0).toLocaleString() %></div></div>
-                  <div class="rounded-2xl border border-white/[0.06] bg-black/15 p-3"><div class="text-[8px] uppercase tracking-wider text-zinc-700">Inputs</div><div class="mt-1.5 text-xs font-semibold"><%= selectedGeneration.resources.filter(resource => resource.role !== 'Output').length %></div></div>
-                </div>
-                <button type="button" class="generation-open-button primary-button mt-4 h-11 w-full" data-generation-id="<%= selectedGeneration.id %>"><i data-lucide="scan-search" class="h-4 w-4"></i>Review selected generation</button>
-              <% } else { %>
-                <div class="my-auto text-center"><span class="mx-auto grid h-14 w-14 place-items-center rounded-2xl border border-dashed border-white/15 text-zinc-700"><i data-lucide="image-plus" class="h-6 w-6"></i></span><h2 class="mt-5 text-xl font-semibold">No final version selected</h2><p class="mx-auto mt-2 max-w-xs text-xs leading-5 text-zinc-600">Choose the strongest generation below to make it the shot's current final version.</p><button type="button" data-open-tab="generations" class="ghost-button mt-5 h-10 px-4 text-xs">Browse generations</button></div>
-              <% } %>
-            </div>
-          </div>
-        </section>
 
         <div class="sticky z-20 mt-5 flex items-center gap-1 overflow-x-auto rounded-2xl border border-white/[0.07] bg-[#0e0f11]/90 p-1.5 backdrop-blur-xl" style="top:calc(80px + var(--shot-navigation-height, 0px))">
           <button class="shot-tab active shrink-0 rounded-xl px-4 py-2 text-xs font-semibold" data-tab="generations"><i data-lucide="layers-3" class="mr-2 inline h-3.5 w-3.5"></i>Generations <span class="ml-1 rounded-full bg-white/[0.06] px-1.5 py-0.5 text-[9px]"><%= plan.generation_count %></span></button>

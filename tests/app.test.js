@@ -580,7 +580,7 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(shotPage.status, 200);
   const html = await shotPage.text();
   assert.match(html, /Docker integration shot/);
-  assert.match(html, /Current final version/);
+  assert.doesNotMatch(html, /Current final version|Final preview/);
   assert.match(html, /Generation timeline/);
   assert.match(html, /Brief, notes, and assets/);
   assert.match(html, /id="assetBriefForm"/);
