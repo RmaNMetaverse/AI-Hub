@@ -170,15 +170,21 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assetForm.append("category", "Character Sheet");
   assetForm.append("tags", "lead, costume");
   assetForm.append("description", "Approved turnaround sheet");
-  assetForm.append("file", new Blob([assetBytes], { type: "application/pdf" }), "lead-character.pdf");
+  assetForm.append("files", new Blob([assetBytes], { type: "application/pdf" }), "lead-character.pdf");
+  assetForm.append("files", new Blob([new Uint8Array([80, 78, 71])], { type: "image/png" }), "lead-character-color.png");
   const assetResponse = await fetch(`${origin}/api/library-assets`, { method: "POST", headers: { cookie: creatorCookie }, body: assetForm });
   assert.equal(assetResponse.status, 201);
   const savedAsset = await assetResponse.json();
   assert.equal(savedAsset.category, "Character Sheet");
   assert.equal(savedAsset.kind, "document");
   assert.deepEqual(savedAsset.tags, ["lead", "costume"]);
+  assert.equal(savedAsset.files.length, 2);
+  const secondAssetFile = await fetch(`${origin}${savedAsset.files[1].content_url}`, { headers: { cookie: creatorCookie } });
+  assert.deepEqual(new Uint8Array(await secondAssetFile.arrayBuffer()), new Uint8Array([80, 78, 71]));
   const assetList = await request("/api/library-assets", { cookie: creatorCookie });
-  assert.equal((await assetList.json()).assets[0].title, "Lead character sheet");
+  const assetPayload = await assetList.json();
+  assert.equal(assetPayload.assets[0].title, "Lead character sheet");
+  assert.deepEqual(assetPayload.tags, ["costume", "lead"]);
 
   const catalogAccess = await request("/api/admin/catalogs", { cookie: creatorCookie });
   assert.equal(catalogAccess.status, 403);
@@ -190,6 +196,7 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
     "Gemini Omni", "Kling 3.0", "LTX", "Seedance 2.0", "Seedance 2.0 Fast", "Seedance 2.5"
   ].sort());
   assert.deepEqual(catalogs.platforms.filter((item) => item.active).map((item) => item.name).sort(), ["ComfyUI", "Higgsfield", "Vidax"].sort());
+  assert.ok(catalogs.asset_categories.some((item) => item.name === "Character Sheet" && item.active));
 
   const outputRole = catalogs.resource_roles.find((item) => item.name === "Output");
   const removeOutputResponse = await request(`/api/admin/catalogs/resource_roles/${outputRole.id}`, {

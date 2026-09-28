@@ -3,6 +3,7 @@
 const libraryType = window.__AI_HUB_LIBRARY_TYPE__;
 const permissions = window.__AI_HUB_PERMISSIONS__ || {};
 const maxUploadBytes = Number(window.__AI_HUB_MAX_UPLOAD_BYTES__ || 0);
+let assetTags = window.__AI_HUB_ASSET_TAGS__ || [];
 let items = window.__AI_HUB_LIBRARY_ITEMS__ || [];
 let activePromptId = null;
 let query = "";
@@ -56,7 +57,10 @@ function promptCard(prompt) {
 }
 
 function assetCard(asset) {
-  return `<article class="group overflow-hidden rounded-3xl border border-white/[0.07] bg-[#101113]" data-asset-id="${asset.id}"><a href="${escapeHtml(asset.content_url)}" target="_blank" rel="noopener" class="block overflow-hidden bg-black/20">${mediaPreview(asset)}</a><div class="p-4"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><div class="text-[9px] font-semibold uppercase tracking-[0.13em] text-acid">${escapeHtml(asset.category)}</div><h2 class="mt-2 truncate text-sm font-semibold text-zinc-200" title="${escapeHtml(asset.title)}">${escapeHtml(asset.title)}</h2></div>${permissions.canManageLibraries ? `<button class="delete-asset icon-button h-8 w-8 shrink-0 text-red-300/55"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ""}</div><p class="mt-2 line-clamp-2 min-h-9 text-[10px] leading-[18px] text-zinc-600">${escapeHtml(asset.description || asset.original_name)}</p><div class="mt-3 flex flex-wrap gap-1">${asset.tags.map((tag) => `<span class="rounded-full bg-white/[0.035] px-2 py-1 text-[8px] text-zinc-600">${escapeHtml(tag)}</span>`).join("")}</div><div class="mt-4 flex items-center gap-2 border-t border-white/[0.06] pt-3"><span class="truncate text-[9px] text-zinc-700">${escapeHtml(asset.original_name)} · ${formatBytes(asset.size_bytes)}</span><a href="${escapeHtml(asset.download_url)}" class="icon-button ml-auto h-8 w-8 shrink-0" aria-label="Download"><i data-lucide="download" class="h-3.5 w-3.5"></i></a></div></div></article>`;
+  const files = asset.files?.length ? asset.files : [asset];
+  const primary = files[0];
+  const fileList = files.slice(0, 3).map((file) => `<a href="${escapeHtml(file.content_url)}" target="_blank" rel="noopener" class="block truncate text-[9px] text-zinc-600 transition hover:text-acid">${escapeHtml(file.original_name)}</a>`).join("");
+  return `<article class="group overflow-hidden rounded-3xl border border-white/[0.07] bg-[#101113]" data-asset-id="${asset.id}"><a href="${escapeHtml(primary.content_url)}" target="_blank" rel="noopener" class="block overflow-hidden bg-black/20">${mediaPreview(primary)}</a><div class="p-4"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><div class="text-[9px] font-semibold uppercase tracking-[0.13em] text-acid">${escapeHtml(asset.category)}</div><h2 class="mt-2 truncate text-sm font-semibold text-zinc-200" title="${escapeHtml(asset.title)}">${escapeHtml(asset.title)}</h2></div>${permissions.canManageLibraries ? `<button class="delete-asset icon-button h-8 w-8 shrink-0 text-red-300/55"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ""}</div><p class="mt-2 line-clamp-2 min-h-9 text-[10px] leading-[18px] text-zinc-600">${escapeHtml(asset.description || primary.original_name)}</p><div class="mt-3 flex flex-wrap gap-1">${asset.tags.map((tag) => `<span class="rounded-full bg-white/[0.035] px-2 py-1 text-[8px] text-zinc-600">${escapeHtml(tag)}</span>`).join("")}</div><div class="mt-4 border-t border-white/[0.06] pt-3"><div class="flex items-center gap-2"><span class="text-[9px] text-zinc-700">${files.length} file${files.length === 1 ? "" : "s"} · ${formatBytes(files.reduce((total, file) => total + Number(file.size_bytes || 0), 0))}</span><a href="${escapeHtml(primary.download_url)}" class="icon-button ml-auto h-8 w-8 shrink-0" aria-label="Download ${escapeHtml(primary.original_name)}"><i data-lucide="download" class="h-3.5 w-3.5"></i></a></div><div class="mt-2 space-y-1">${fileList}${files.length > 3 ? `<div class="text-[9px] text-zinc-700">+${files.length - 3} more files</div>` : ""}</div></div></div></article>`;
 }
 
 function filteredItems() {
@@ -64,7 +68,7 @@ function filteredItems() {
   return items.filter((item) => {
     const haystack = libraryType === "prompts"
       ? [item.title, item.prompt, item.negative_prompt, item.created_by_name, ...(item.tags || []), ...item.assets.map((asset) => asset.original_name)].join(" ").toLowerCase()
-      : [item.title, item.description, item.original_name, item.uploaded_by_name, ...(item.tags || [])].join(" ").toLowerCase();
+      : [item.title, item.description, item.original_name, item.uploaded_by_name, ...(item.tags || []), ...(item.files || []).map((file) => file.original_name)].join(" ").toLowerCase();
     return (!needle || haystack.includes(needle))
       && (libraryType !== "assets" || category === "all" || item.category === category)
       && (libraryType !== "assets" || kind === "all" || item.kind === kind);
@@ -152,6 +156,26 @@ document.querySelector(".library-mobile-menu")?.addEventListener("click", () => 
 document.querySelector(".library-logout")?.addEventListener("click", async () => { await fetch("/auth/logout", { method: "POST" }); window.location.assign(`${window.__AI_HUB_BASE__ || ""}/login`); });
 document.querySelectorAll("[data-planned-feature]").forEach((button) => button.addEventListener("click", () => showToast(`${button.dataset.plannedFeature} is planned for a future update`)));
 
+function addAssetTag(tag) {
+  const input = document.querySelector("#assetTagsInput");
+  if (!input || !tag) return;
+  const tags = input.value.split(",").map((value) => value.trim()).filter(Boolean);
+  if (!tags.some((value) => value.toLocaleLowerCase() === tag.toLocaleLowerCase())) tags.push(tag);
+  input.value = tags.join(", ");
+  input.focus();
+}
+
+function renderAssetTagSuggestions() {
+  const options = document.querySelector("#assetTagOptions");
+  const suggestions = document.querySelector("#assetTagSuggestions");
+  if (options) options.innerHTML = assetTags.map((tag) => `<option value="${escapeHtml(tag)}"></option>`).join("");
+  if (!suggestions) return;
+  suggestions.innerHTML = assetTags.map((tag) => `<button type="button" class="asset-tag-suggestion rounded-full border border-white/[0.08] px-2 py-1 text-[9px] text-zinc-500 transition hover:border-acid/40 hover:text-acid" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join("");
+  suggestions.querySelectorAll(".asset-tag-suggestion").forEach((button) => button.addEventListener("click", () => addAssetTag(button.dataset.tag)));
+}
+
+renderAssetTagSuggestions();
+
 document.querySelector("#promptAssetPicker")?.addEventListener("change", async (event) => {
   const files = [...event.target.files]; event.target.value = "";
   if (!activePromptId || !files.length) return;
@@ -176,12 +200,17 @@ document.querySelector("#libraryForm")?.addEventListener("submit", async (event)
       showToast("Prompt saved");
     } else {
       const data = new FormData(form);
-      const file = data.get("file");
-      if (maxUploadBytes && file.size > maxUploadBytes) throw new Error(`${file.name} exceeds the upload limit`);
+      const files = [...form.elements.files.files];
+      if (!files.length) throw new Error("Choose at least one file to upload");
+      const oversized = files.find((file) => maxUploadBytes && file.size > maxUploadBytes);
+      if (oversized) throw new Error(`${oversized.name} exceeds the upload limit`);
       const response = await fetch("/api/library-assets", { method: "POST", body: data });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Could not upload asset");
-      items.unshift(payload); render(); showToast("Asset uploaded");
+      items.unshift(payload);
+      assetTags = [...new Set([...assetTags, ...(payload.tags || [])])].sort((a, b) => a.localeCompare(b));
+      renderAssetTagSuggestions();
+      render(); showToast(`${payload.files?.length || 1} file${payload.files?.length === 1 ? "" : "s"} uploaded`);
     }
     form.reset(); closeModal();
   } catch (error) { showToast(error.message); }

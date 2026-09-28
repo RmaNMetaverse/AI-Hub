@@ -123,6 +123,12 @@ export const uploadAssetLibraryFile = multer({
   defParamCharset: "utf8"
 }).single("file");
 
+export const uploadAssetLibraryFiles = multer({
+  storage: uploadStorage("asset-library"),
+  limits: { ...libraryLimits, files: 20, parts: 26 },
+  defParamCharset: "utf8"
+}).fields([{ name: "files", maxCount: 20 }, { name: "file", maxCount: 20 }]);
+
 export function resourceKind(mimeType = "", originalName = "") {
   const mime = String(mimeType).toLowerCase();
   const extension = path.extname(String(originalName)).toLowerCase();

@@ -27,6 +27,7 @@ import {
   getGenerationCatalogs,
   getGeneration,
   getLibraryAsset,
+  getLibraryAssetFile,
   getPlan,
   getPlanCover,
   getPrompt,
@@ -36,6 +37,7 @@ import {
   getWorkspaceRole,
   listActivities,
   listLibraryAssets,
+  listLibraryAssetTags,
   listAccounts,
   listPrompts,
   listResources,
@@ -80,7 +82,7 @@ import {
   resourceKind,
   safeOriginalName,
   storageKeyForFile,
-  uploadAssetLibraryFile,
+  uploadAssetLibraryFiles,
   uploadPromptAssetFile,
   uploadPlanCoverFile,
   uploadResourceFile
@@ -95,7 +97,6 @@ const rawBasePath = (process.env.BASE_PATH || process.env.AI_HUB_BASE_PATH || ""
 const basePath = rawBasePath ? (rawBasePath.startsWith("/") ? rawBasePath : `/${rawBasePath}`).replace(/\/+$/, "") : "";
 const loginAttempts = new Map();
 const resourceCategories = ["Reference", "Generation", "Final", "Audio", "Document", "Other"];
-const assetCategories = ["Character Sheet", "Image", "Video Tutorial", "Documentation", "Reference", "Audio", "Other"];
 
 function resourceForClient(resource) {
   if (!resource) return null;
@@ -149,7 +150,11 @@ function promptForClient(prompt) {
 }
 
 function libraryAssetForClient(asset) {
-  return fileForClient(asset, "/library-assets");
+  if (!asset) return null;
+  return {
+    ...fileForClient(asset, "/library-assets"),
+    files: (asset.files || []).map((file) => fileForClient(file, "/library-asset-files"))
+  };
 }
 
 function roleDefinitions() {
@@ -358,11 +363,13 @@ router.get("/prompt-library", (request, response) => {
 router.get("/asset-library", (request, response) => {
   const dashboard = getDashboard();
   const assets = listLibraryAssets().map(libraryAssetForClient);
+  const assetCategories = getGenerationCatalogs().asset_categories.map((item) => item.name);
   response.render("asset-library", {
     project: dashboard.project,
     currentUser: request.user,
     permissions: request.permissions,
     assetCategories,
+    assetTags: listLibraryAssetTags(),
     maxUploadBytes,
     serializedAssets: JSON.stringify(assets).replaceAll("<", "\\u003c"),
     serializedPermissions: JSON.stringify(request.permissions).replaceAll("<", "\\u003c")
@@ -883,6 +890,44 @@ function receiveLibraryUpload(upload, request, response, save) {
   });
 }
 
+function receiveLibraryUploads(upload, request, response, save) {
+  upload(request, response, async (uploadError) => {
+    const storageKeys = [];
+    try {
+      if (uploadError) {
+        const status = uploadError.code === "LIMIT_FILE_SIZE" ? 413 : 400;
+        const message = uploadError.code === "LIMIT_FILE_SIZE"
+          ? `A file is larger than the ${Math.round(maxUploadBytes / 1024 / 1024 / 1024)} GB upload limit`
+          : uploadError.message;
+        return response.status(status).json({ error: message });
+      }
+      const uploaded = Array.isArray(request.files)
+        ? request.files
+        : [...(request.files?.files || []), ...(request.files?.file || [])];
+      if (!uploaded.length) return response.status(400).json({ error: "Choose at least one file to upload" });
+      const files = await Promise.all(uploaded.map(async (file) => {
+        const storageKey = storageKeyForFile(file.path);
+        storageKeys.push(storageKey);
+        if (!file.size) throw new Error("Empty files cannot be uploaded");
+        const originalName = safeOriginalName(file.originalname);
+        return {
+          originalName,
+          storageKey,
+          mimeType: String(file.mimetype || "application/octet-stream").slice(0, 160),
+          kind: resourceKind(file.mimetype, originalName),
+          sizeBytes: file.size,
+          checksumSha256: await checksumFile(file.path)
+        };
+      }));
+      const saved = await save(files);
+      response.status(201).json(saved);
+    } catch (error) {
+      await Promise.all(storageKeys.map((storageKey) => removeStoredFile(storageKey).catch(() => {})));
+      response.status(400).json({ error: error.message || "The upload could not be saved" });
+    }
+  });
+}
+
 router.get("/api/prompts", (_request, response) => {
   response.json(listPrompts().map(promptForClient));
 });
@@ -948,27 +993,33 @@ router.get("/prompt-assets/:id/content", async (request, response) => {
 });
 
 router.get("/api/library-assets", (_request, response) => {
-  response.json({ assets: listLibraryAssets().map(libraryAssetForClient), categories: assetCategories });
+  response.json({
+    assets: listLibraryAssets().map(libraryAssetForClient),
+    categories: getGenerationCatalogs().asset_categories.map((item) => item.name),
+    tags: listLibraryAssetTags()
+  });
 });
 
 router.post("/api/library-assets", requirePermission("canManageLibraries"), (request, response) => {
-  receiveLibraryUpload(uploadAssetLibraryFile, request, response, (file) => {
+  receiveLibraryUploads(uploadAssetLibraryFiles, request, response, async (files) => {
+    const assetCategories = getGenerationCatalogs().asset_categories.map((item) => item.name);
     const category = assetCategories.includes(request.body.category) ? request.body.category : "Other";
     const asset = createLibraryAsset({
-      title: String(request.body.title || file.originalName).trim().slice(0, 160),
+      title: String(request.body.title || files[0].originalName).trim().slice(0, 160),
       description: String(request.body.description || "").trim().slice(0, 3000),
       category,
       tags: String(request.body.tags || "").trim().slice(0, 1000),
       uploadedBy: request.user.id,
-      ...file
+      files
     });
-    recordActivity(request.user, "uploaded_library_asset", "library_asset", asset.id, `Uploaded library asset · ${asset.title}`);
+    recordActivity(request.user, "uploaded_library_asset", "library_asset", asset.id, `Uploaded ${files.length} file${files.length === 1 ? "" : "s"} for library asset · ${asset.title}`);
     return libraryAssetForClient(asset);
   });
 });
 
 router.patch("/api/library-assets/:id", requirePermission("canManageLibraries"), (request, response) => {
   try {
+    const assetCategories = getGenerationCatalogs().asset_categories.map((item) => item.name);
     if (request.body.category !== undefined && !assetCategories.includes(request.body.category)) throw new Error("Invalid asset category");
     const asset = updateLibraryAsset(Number(request.params.id), request.body);
     recordActivity(request.user, "updated_library_asset", "library_asset", asset.id, `Updated library asset · ${asset.title}`);
@@ -981,7 +1032,7 @@ router.patch("/api/library-assets/:id", requirePermission("canManageLibraries"),
 router.delete("/api/library-assets/:id", requirePermission("canManageLibraries"), async (request, response) => {
   try {
     const asset = deleteLibraryAsset(Number(request.params.id));
-    await removeStoredFile(asset.storage_key);
+    await Promise.all((asset.files || []).map((file) => removeStoredFile(file.storage_key)));
     recordActivity(request.user, "deleted_library_asset", "library_asset", asset.id, `Deleted library asset · ${asset.title}`);
     response.status(204).end();
   } catch (error) {
@@ -993,6 +1044,12 @@ router.get("/library-assets/:id/content", async (request, response) => {
   const asset = getLibraryAsset(Number(request.params.id));
   if (!asset) return response.status(404).json({ error: "Asset not found" });
   await streamStoredFile(asset, request, response);
+});
+
+router.get("/library-asset-files/:id/content", async (request, response) => {
+  const file = getLibraryAssetFile(Number(request.params.id));
+  if (!file) return response.status(404).json({ error: "Asset file not found" });
+  await streamStoredFile(file, request, response);
 });
 
 router.get("/api/users", requirePermission("canManageAccounts"), (_request, response) => {

@@ -241,6 +241,32 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS asset_library_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_id INTEGER NOT NULL REFERENCES asset_library(id) ON DELETE CASCADE,
+    original_name TEXT NOT NULL,
+    storage_key TEXT NOT NULL UNIQUE,
+    mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+    kind TEXT NOT NULL DEFAULT 'other',
+    size_bytes INTEGER NOT NULL,
+    checksum_sha256 TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS asset_library_tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS asset_library_categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS activity_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -260,6 +286,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS prompt_library_updated_idx ON prompt_library(updated_at DESC);
   CREATE INDEX IF NOT EXISTS prompt_assets_prompt_idx ON prompt_assets(prompt_id);
   CREATE INDEX IF NOT EXISTS asset_library_category_idx ON asset_library(category, created_at DESC);
+  CREATE INDEX IF NOT EXISTS asset_library_files_asset_idx ON asset_library_files(asset_id, id);
   CREATE INDEX IF NOT EXISTS activity_log_created_idx ON activity_log(created_at DESC, id DESC);
   CREATE INDEX IF NOT EXISTS activity_log_user_idx ON activity_log(user_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS activity_log_plan_idx ON activity_log(plan_id, created_at DESC);
@@ -338,6 +365,7 @@ const defaultGenerationResourceRoles = [
   "Output", "First Frame", "Last Frame", "Depth Map", "Reference Video", "Reference Image",
   "Motion Reference", "Mask", "Control Pose", "Audio Reference", "Other Input"
 ];
+const defaultAssetLibraryCategories = ["Character Sheet", "Image", "Video Tutorial", "Documentation", "Reference", "Audio", "Other"];
 
 const seedCatalogs = db.transaction(() => {
   const insertModel = db.prepare("INSERT OR IGNORE INTO generation_models (name) VALUES (?)");
@@ -346,9 +374,27 @@ const seedCatalogs = db.transaction(() => {
   defaultGenerationPlatforms.forEach((name) => insertPlatform.run(name));
   const insertRole = db.prepare("INSERT OR IGNORE INTO generation_resource_roles (name, sort_order) VALUES (?, ?)");
   defaultGenerationResourceRoles.forEach((name, index) => insertRole.run(name, index + 1));
+  const insertAssetCategory = db.prepare("INSERT OR IGNORE INTO asset_library_categories (name) VALUES (?)");
+  defaultAssetLibraryCategories.forEach((name) => insertAssetCategory.run(name));
 });
 
 seedCatalogs();
+
+const migrateLibraryAssetFiles = db.transaction(() => {
+  const legacyAssets = db.prepare("SELECT * FROM asset_library").all();
+  const insertFile = db.prepare(`
+    INSERT OR IGNORE INTO asset_library_files (
+      asset_id, original_name, storage_key, mime_type, kind, size_bytes, checksum_sha256
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  const insertTag = db.prepare("INSERT OR IGNORE INTO asset_library_tags (name) VALUES (?)");
+  legacyAssets.forEach((asset) => {
+    insertFile.run(asset.id, asset.original_name, asset.storage_key, asset.mime_type, asset.kind, asset.size_bytes, asset.checksum_sha256);
+    String(asset.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean).forEach((tag) => insertTag.run(tag));
+  });
+});
+
+migrateLibraryAssetFiles();
 
 function seedInitialAdmin() {
   const userCount = db.prepare("SELECT COUNT(*) AS count FROM users").get().count;
@@ -752,7 +798,8 @@ export function getResource(id) {
 const catalogTables = {
   models: "generation_models",
   platforms: "generation_platforms",
-  resource_roles: "generation_resource_roles"
+  resource_roles: "generation_resource_roles",
+  asset_categories: "asset_library_categories"
 };
 
 function catalogTable(type) {
@@ -772,7 +819,8 @@ export function getGenerationCatalogs({ includeInactive = false } = {}) {
   return {
     models: catalogRows("models", includeInactive),
     platforms: catalogRows("platforms", includeInactive),
-    resource_roles: catalogRows("resource_roles", includeInactive)
+    resource_roles: catalogRows("resource_roles", includeInactive),
+    asset_categories: catalogRows("asset_categories", includeInactive)
   };
 }
 
@@ -1301,6 +1349,20 @@ function normalizeTags(row) {
   return { ...row, tags: String(row.tags || "").split(",").map((tag) => tag.trim()).filter(Boolean) };
 }
 
+function normalizedAssetTags(value) {
+  const unique = new Map();
+  (Array.isArray(value) ? value : String(value || "").split(",")).forEach((tag) => {
+    const name = String(tag).trim().replace(/\s+/g, " ").slice(0, 80);
+    if (name && !unique.has(name.toLocaleLowerCase())) unique.set(name.toLocaleLowerCase(), name);
+  });
+  return [...unique.values()];
+}
+
+function rememberAssetTags(tags) {
+  const insert = db.prepare("INSERT OR IGNORE INTO asset_library_tags (name) VALUES (?)");
+  tags.forEach((tag) => insert.run(tag));
+}
+
 function promptAssetRows(promptId) {
   return db.prepare(`
     SELECT pa.*, u.display_name AS uploaded_by_name
@@ -1385,7 +1447,13 @@ export function listLibraryAssets() {
     SELECT a.*, u.display_name AS uploaded_by_name
     FROM asset_library a LEFT JOIN users u ON u.id = a.uploaded_by
     ORDER BY a.created_at DESC, a.id DESC
-  `).all().map(normalizeTags);
+  `).all().map((asset) => ({ ...normalizeTags(asset), files: assetLibraryFileRows(asset.id) }));
+}
+
+function assetLibraryFileRows(assetId) {
+  return db.prepare(`
+    SELECT * FROM asset_library_files WHERE asset_id = ? ORDER BY id ASC
+  `).all(assetId);
 }
 
 export function getLibraryAsset(id) {
@@ -1393,22 +1461,42 @@ export function getLibraryAsset(id) {
     SELECT a.*, u.display_name AS uploaded_by_name
     FROM asset_library a LEFT JOIN users u ON u.id = a.uploaded_by WHERE a.id = ?
   `).get(id);
-  return asset ? normalizeTags(asset) : null;
+  return asset ? { ...normalizeTags(asset), files: assetLibraryFileRows(asset.id) } : null;
+}
+
+export function getLibraryAssetFile(id) {
+  return db.prepare("SELECT * FROM asset_library_files WHERE id = ?").get(id);
+}
+
+export function listLibraryAssetTags() {
+  return db.prepare("SELECT name FROM asset_library_tags ORDER BY name COLLATE NOCASE").all().map((row) => row.name);
 }
 
 export function createLibraryAsset(input) {
-  const title = String(input.title || input.originalName || "").trim().slice(0, 160);
+  const files = Array.isArray(input.files) ? input.files : [];
+  if (!files.length) throw new Error("Choose at least one file to upload");
+  const firstFile = files[0];
+  const title = String(input.title || firstFile.originalName || "").trim().slice(0, 160);
   if (!title) throw new Error("Asset title is required");
-  const result = db.prepare(`
-    INSERT INTO asset_library (
-      title, description, category, tags, uploaded_by, original_name, storage_key,
-      mime_type, kind, size_bytes, checksum_sha256
-    ) VALUES (
-      @title, @description, @category, @tags, @uploadedBy, @originalName, @storageKey,
-      @mimeType, @kind, @sizeBytes, @checksumSha256
-    )
-  `).run({ ...input, title });
-  return getLibraryAsset(Number(result.lastInsertRowid));
+  const tags = normalizedAssetTags(input.tags);
+  const create = db.transaction(() => {
+    const result = db.prepare(`
+      INSERT INTO asset_library (
+        title, description, category, tags, uploaded_by, original_name, storage_key,
+        mime_type, kind, size_bytes, checksum_sha256
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(title, String(input.description || "").trim().slice(0, 3000), String(input.category || "Other").trim().slice(0, 80),
+      tags.join(","), input.uploadedBy, firstFile.originalName, firstFile.storageKey, firstFile.mimeType, firstFile.kind, firstFile.sizeBytes, firstFile.checksumSha256);
+    const assetId = Number(result.lastInsertRowid);
+    const insertFile = db.prepare(`
+      INSERT INTO asset_library_files (asset_id, original_name, storage_key, mime_type, kind, size_bytes, checksum_sha256)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    files.forEach((file) => insertFile.run(assetId, file.originalName, file.storageKey, file.mimeType, file.kind, file.sizeBytes, file.checksumSha256));
+    rememberAssetTags(tags);
+    return assetId;
+  });
+  return getLibraryAsset(create());
 }
 
 export function updateLibraryAsset(id, input) {
@@ -1416,12 +1504,15 @@ export function updateLibraryAsset(id, input) {
   if (!current) throw new Error("Asset not found");
   const title = String(input.title ?? current.title).trim().slice(0, 160);
   if (!title) throw new Error("Asset title is required");
-  const tags = Array.isArray(input.tags) ? input.tags.join(",") : String(input.tags ?? current.tags.join(","));
-  db.prepare(`
-    UPDATE asset_library SET title = ?, description = ?, category = ?, tags = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(title, String(input.description ?? current.description).trim().slice(0, 3000),
-    String(input.category ?? current.category).trim().slice(0, 80), tags.trim().slice(0, 1000), id);
+  const tags = normalizedAssetTags(input.tags ?? current.tags);
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE asset_library SET title = ?, description = ?, category = ?, tags = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(title, String(input.description ?? current.description).trim().slice(0, 3000),
+      String(input.category ?? current.category).trim().slice(0, 80), tags.join(",").slice(0, 1000), id);
+    rememberAssetTags(tags);
+  })();
   return getLibraryAsset(id);
 }
 

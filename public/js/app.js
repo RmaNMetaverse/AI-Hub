@@ -636,7 +636,8 @@ let activeCatalogType = "models";
 const catalogCopy = {
   models: { singular: "AI model", eyebrow: "Available models", title: "AI model catalog" },
   platforms: { singular: "generation platform", eyebrow: "Platforms & frozen pricing", title: "Generation platform catalog" },
-  resource_roles: { singular: "resource type", eyebrow: "Generation resource types", title: "Resource type catalog" }
+  resource_roles: { singular: "resource type", eyebrow: "Generation resource types", title: "Resource type catalog" },
+  asset_categories: { singular: "asset category", eyebrow: "Asset Library categories", title: "Asset category catalog" }
 };
 
 async function loadCatalogs() {
