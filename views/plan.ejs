@@ -124,7 +124,7 @@
             <section class="shot-panel hidden" data-panel="assets">
               <div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                 <div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Plan preparation</div><h2 class="mt-2 text-2xl font-semibold tracking-tight">Brief, notes, and assets</h2><p class="mt-2 max-w-2xl text-sm text-zinc-500">Keep the shot brief and reusable inputs together before creating generations.</p></div>
-                <div class="flex items-center gap-2"><div class="rounded-full border border-white/[0.08] px-3 py-1.5 text-[10px] text-zinc-500"><%= plan.resource_count %> assets &middot; <%= formatBytes(plan.resource_bytes) %></div><% if (plan.resources.length) { %><select id="resourceFilter" class="field h-9 w-auto min-w-36 py-0 pl-3.5 pr-8 text-xs"><option value="all">All asset types</option><% generationResourceRoles.forEach(role => { %><option value="<%= role %>"><%= role %></option><% }) %></select><% } %></div>
+                <div class="flex items-center gap-2"><div class="rounded-full border border-white/[0.08] px-3 py-1.5 text-[10px] text-zinc-500"><%= plan.resource_count %> assets &middot; <%= formatBytes(plan.resource_bytes) %></div><% if (plan.assets.length) { %><select id="resourceFilter" class="field h-9 w-auto min-w-36 py-0 pl-3.5 pr-8 text-xs"><option value="all">All asset types</option><% generationResourceRoles.forEach(role => { %><option value="<%= role %>"><%= role %></option><% }) %></select><% } %></div>
               </div>
 
               <form id="assetBriefForm" class="mt-6 rounded-3xl border border-white/[0.08] bg-[#101113] p-4 sm:p-5">
@@ -146,7 +146,7 @@
               <% } %>
 
               <div id="resourceGrid" class="mt-6 grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
-                <% if (plan.resources.length) { plan.resources.forEach(resource => { %>
+                <% if (plan.assets.length) { plan.assets.forEach(resource => { %>
                   <article class="resource-card group overflow-hidden rounded-3xl border border-white/[0.07] bg-[#101113]" data-resource-card="<%= resource.id %>" data-resource-role="<%= resource.asset_role %>">
                     <div class="relative aspect-video overflow-hidden bg-black/30">
                       <% if (resource.kind === 'image' && !resource.mime_type.includes('svg')) { %><a href="<%= resource.content_url %>" target="_blank" rel="noopener"><img src="<%= resource.content_url %>" alt="<%= resource.original_name %>" loading="lazy" class="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]" /></a>

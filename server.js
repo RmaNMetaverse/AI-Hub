@@ -130,6 +130,7 @@ function planForClient(plan) {
     ...publicPlan,
     cover_url: plan.cover_id ? `${basePath}${plan.cover_source === "custom" ? "/plan-covers" : "/resources"}/${plan.cover_id}/content` : null,
     resources: Array.isArray(plan.resources) ? plan.resources.map(resourceForClient) : plan.resources,
+    assets: Array.isArray(plan.assets) ? plan.assets.map(resourceForClient) : [],
     generations: Array.isArray(plan.generations) ? plan.generations.map(generationForClient) : [],
     selected_generation: generationForClient(plan.selected_generation)
   };

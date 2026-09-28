@@ -742,6 +742,7 @@ export function getPlan(id) {
   if (!plan) return null;
   const generations = listGenerations(id);
   const resources = listResources(id);
+  const assets = resources.filter((resource) => resource.category !== "Generation" && resource.asset_role !== "Output");
   const selectedGeneration = generations.find((generation) => generation.id === plan.selected_generation_id) || null;
   const approval = db.prepare(`
     SELECT pa.*, u.display_name AS approved_by_name, u.username AS approved_by_username,
@@ -766,8 +767,9 @@ export function getPlan(id) {
     approval,
     generation_count: generations.length,
     resources,
-    resource_count: resources.length,
-    resource_bytes: resources.reduce((total, resource) => total + resource.size_bytes, 0)
+    assets,
+    resource_count: assets.length,
+    resource_bytes: assets.reduce((total, resource) => total + resource.size_bytes, 0)
   };
 }
 

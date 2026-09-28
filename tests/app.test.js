@@ -405,6 +405,11 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(firstGeneration.token_price_snapshot, 0.25);
   assert.equal(firstGeneration.resources.length, 2);
   assert.equal(firstGeneration.resources.find((item) => item.role === "Output").id, outputResource.id);
+  const planWithGeneration = await request(`/api/plans/${plan.id}`, { cookie: creatorCookie });
+  const planFiles = await planWithGeneration.json();
+  assert.ok(planFiles.resources.some((item) => item.id === outputResource.id));
+  assert.deepEqual(planFiles.assets.map((item) => item.id), [resource.id]);
+  assert.equal(planFiles.resource_count, 1);
 
   const duplicateVersionResponse = await request(`/api/plans/${plan.id}/generations`, {
     method: "POST",
@@ -615,6 +620,10 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.match(html, /v1/);
   assert.match(html, /Higgsfield/);
   assert.match(html, /generation-output\.png/);
+  const assetsPanel = html.match(/<section class="shot-panel hidden" data-panel="assets">([\s\S]*?)<\/section>/)?.[1];
+  assert.ok(assetsPanel);
+  assert.match(assetsPanel, /reference-frame\.png/);
+  assert.doesNotMatch(assetsPanel, /generation-output\.png/);
   assert.match(html, /Approved by Docker Supervisor/);
   assert.match(html, /reference-frame\.png/);
   assert.match(html, /\/js\/plan-detail\.js/);
