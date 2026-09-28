@@ -35,13 +35,19 @@
   function init() {
     button = document.querySelector("#notificationButton");
     if (!button) {
+      const header = document.querySelector("header.sticky");
+      if (!header) return;
+      header.classList.add("notification-header");
       button = document.createElement("button");
       button.id = "notificationButton";
       button.type = "button";
-      button.className = "icon-button fixed right-16 top-4 z-[75]";
+      button.className = "icon-button notification-header-button relative";
       button.setAttribute("aria-label", "Notifications");
       button.innerHTML = `<i data-lucide="bell" class="h-4 w-4"></i><span id="notificationBadge" class="absolute -right-1 -top-1 hidden min-w-4 rounded-full bg-acid px-1 text-[9px] font-bold text-black"></span>`;
-      document.body.append(button);
+      const actionGroup = header.querySelector(".ml-auto.flex.items-center.gap-2");
+      if (actionGroup) actionGroup.prepend(button);
+      else if (header.lastElementChild?.matches("button, a")) header.insertBefore(button, header.lastElementChild);
+      else header.append(button);
     }
     panel = document.createElement("div");
     panel.id = "notificationPanel";

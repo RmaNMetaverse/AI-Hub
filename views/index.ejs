@@ -41,11 +41,11 @@
       <main class="min-h-screen lg:ml-[232px]">
         <header class="sticky top-0 z-30 flex h-[68px] items-center border-b border-white/[0.07] bg-[#08090a]/80 px-4 backdrop-blur-xl sm:px-6 xl:px-8">
           <button id="mobileMenuButton" class="icon-button mr-3 lg:hidden" aria-label="Open navigation"><i data-lucide="menu" class="h-4 w-4"></i></button>
-          <div class="relative max-w-[420px] flex-1">
+          <div class="relative min-w-0 max-w-[420px] flex-1">
             <i data-lucide="search" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-600"></i>
             <input id="searchInput" class="h-10 w-full rounded-full border border-transparent bg-white/[0.045] pl-10 pr-4 text-sm outline-none transition placeholder:text-zinc-600 focus:border-white/10 focus:bg-white/[0.065]" placeholder="Search plans, shots, models..." aria-label="Search plans" />
           </div>
-          <div class="ml-auto flex items-center gap-2 pl-3">
+          <div class="ml-auto flex shrink-0 items-center gap-2 pl-3">
             <button id="notificationButton" type="button" class="icon-button relative" aria-label="Notifications"><i data-lucide="bell" class="h-4 w-4"></i><span id="notificationBadge" class="absolute -right-1 -top-1 hidden min-w-4 rounded-full bg-acid px-1 text-[9px] font-bold text-black"></span></button>
             <% if (permissions.canCreatePlans) { %>
             <button id="newPlanButton" class="primary-button"><i data-lucide="plus" class="h-4 w-4"></i><span class="hidden sm:inline">New plan</span></button>

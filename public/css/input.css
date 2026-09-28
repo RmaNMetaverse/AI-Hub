@@ -140,15 +140,18 @@
   }
 
   select option {
-    background-color: #0d0f12;
+    background: #0d0f12;
     color: #e4e4e7;
+    color-scheme: dark;
     padding: 10px 14px;
     font-size: 13px;
   }
 
   select option:checked,
-  select option:hover {
-    background-color: #172410 !important;
+  select option:hover,
+  select option:focus,
+  select option:focus-visible {
+    background: #244014 linear-gradient(#244014, #244014) !important;
     color: #d6ff45 !important;
     font-weight: 600;
   }
@@ -165,6 +168,51 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
+  }
+
+  @supports (appearance: base-select) {
+    select:not([multiple]):not([size]),
+    select:not([multiple]):not([size])::picker(select) {
+      appearance: base-select;
+    }
+
+    select:not([multiple]):not([size])::picker-icon {
+      display: none;
+    }
+
+    select:not([multiple]):not([size])::picker(select) {
+      max-height: min(22rem, 60vh);
+      overflow-y: auto;
+      border: 1px solid rgba(214, 255, 69, 0.28);
+      border-radius: 0.9rem;
+      background: #101410;
+      padding: 0.3rem;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+      color-scheme: dark;
+    }
+
+    select:not([multiple]):not([size]) option {
+      border-radius: 0.6rem;
+      padding: 0.65rem 0.8rem;
+      background: transparent;
+      color: #d4d4d8;
+    }
+
+    select:not([multiple]):not([size]) option:hover,
+    select:not([multiple]):not([size]) option:focus-visible,
+    select:not([multiple]):not([size]) option:checked {
+      background: #244014 !important;
+      color: #d6ff45 !important;
+    }
+
+    select:not([multiple]):not([size]) option::checkmark {
+      color: #d6ff45;
+    }
+  }
+
+  select:focus option:checked {
+    background: #244014 linear-gradient(#244014, #244014) !important;
+    color: #d6ff45 !important;
   }
 
   .field-label {
@@ -425,10 +473,14 @@
 @keyframes report-bar-grow { to { width: var(--bar-width); } }
 
 .report-pulse-shell { display: grid; min-height: 15rem; grid-template-rows: auto 1fr; gap: 1.25rem; }
-.report-pulse-stats { display: flex; flex-wrap: wrap; gap: .55rem; }
-.report-pulse-stat { border: 1px solid rgba(255,255,255,.06); border-radius: .75rem; background: rgba(0,0,0,.15); padding: .5rem .7rem; }
+.report-pulse-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: .75rem 1rem; }
+.report-pulse-stats { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .55rem; }
+.report-pulse-stat { flex: none; border: 1px solid rgba(255,255,255,.06); border-radius: .75rem; background: rgba(0,0,0,.15); padding: .5rem .7rem; }
 .report-pulse-stat span { display: block; color: #52525b; font-size: .5rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 .report-pulse-stat strong { display: block; margin-top: .22rem; color: #e4e4e7; font-size: .75rem; font-weight: 650; }
+.report-pulse-legend { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding-top: .35rem; color: #71717a; font-size: .6rem; }
+.report-pulse-legend > span { display: inline-flex; align-items: center; gap: .35rem; }
+.report-pulse-legend-dot { display: inline-block; width: .4rem; height: .4rem; border-radius: 50%; }
 .report-pulse-svg { width: 100%; min-height: 12rem; overflow: visible; }
 .report-grid-line { stroke: rgba(255,255,255,.055); stroke-width: 1; }
 .report-axis-label { fill: #3f3f46; font-size: 8px; }
@@ -439,6 +491,13 @@
 .report-pulse-dot { fill: #0d0e10; stroke: #d6ff45; stroke-width: 1.8; }
 .report-chart-empty { display: grid; min-height: 13rem; place-content: center; text-align: center; color: #52525b; font-size: .7rem; }
 .report-chart-empty svg { width: 1.5rem; height: 1.5rem; margin: 0 auto .65rem; opacity: .55; }
+
+.notification-header-button { flex: none; margin-left: auto; }
+.ml-auto > .notification-header-button { margin-left: 0; }
+.notification-header > .flex-1 { min-width: 0; }
+.notification-header > .notification-header-button + .ml-auto { margin-left: 0; }
+.notification-header > .notification-header-button + .ml-3 { margin-left: 0; }
+.notification-header { gap: .5rem; }
 
 @media (max-width: 639px) {
   .report-chart-stage { min-height: 15rem; }
