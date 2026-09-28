@@ -1429,7 +1429,71 @@ export function getReportData() {
       (SELECT COALESCE(SUM(${reportGenerationCostSql}), 0) FROM generations g) AS generation_cost
   `).get();
 
-  return { summary, users, plans };
+  const planStatuses = db.prepare(`
+    SELECT status AS label, COUNT(*) AS value
+    FROM ai_plans
+    GROUP BY status
+    ORDER BY value DESC, status COLLATE NOCASE
+  `).all();
+
+  const generationStatuses = db.prepare(`
+    SELECT status AS label, COUNT(*) AS value
+    FROM generations
+    GROUP BY status
+    ORDER BY value DESC, status COLLATE NOCASE
+  `).all();
+
+  const platforms = db.prepare(`
+    SELECT CASE WHEN TRIM(COALESCE(g.platform_name, '')) = '' THEN 'Legacy / untracked' ELSE g.platform_name END AS label,
+      COUNT(*) AS generation_count,
+      COALESCE(SUM(CASE WHEN COALESCE(g.platform_name, '') <> ''
+        THEN COALESCE(g.token_count, 0)
+        ELSE COALESCE(g.input_tokens, 0) + COALESCE(g.output_tokens, 0) END), 0) AS token_count,
+      COALESCE(SUM(${reportGenerationCostSql}), 0) AS generation_cost
+    FROM generations g
+    GROUP BY label
+    ORDER BY generation_cost DESC, token_count DESC, label COLLATE NOCASE
+  `).all();
+
+  const dailyPulse = db.prepare(`
+    WITH RECURSIVE days(day) AS (
+      SELECT DATE('now', '-13 days')
+      UNION ALL
+      SELECT DATE(day, '+1 day') FROM days WHERE day < DATE('now')
+    )
+    SELECT days.day,
+      (SELECT COUNT(*) FROM generations g WHERE DATE(g.created_at) = days.day) AS generations,
+      (SELECT COALESCE(SUM(CASE WHEN COALESCE(g.platform_name, '') <> ''
+        THEN COALESCE(g.token_count, 0)
+        ELSE COALESCE(g.input_tokens, 0) + COALESCE(g.output_tokens, 0) END), 0)
+        FROM generations g WHERE DATE(g.created_at) = days.day) AS tokens,
+      (SELECT COALESCE(SUM(${reportGenerationCostSql}), 0)
+        FROM generations g WHERE DATE(g.created_at) = days.day) AS cost,
+      (SELECT COUNT(*) FROM activity_log a WHERE DATE(a.created_at) = days.day) AS activities
+    FROM days
+    ORDER BY days.day
+  `).all();
+
+  const activityTypes = db.prepare(`
+    SELECT CASE
+      WHEN action LIKE '%approv%' THEN 'Approvals'
+      WHEN action LIKE '%generat%' OR entity_type = 'generation' THEN 'Generations'
+      WHEN action LIKE '%upload%' OR entity_type IN ('resource', 'asset') THEN 'Uploads & assets'
+      WHEN action LIKE '%plan%' OR entity_type = 'plan' THEN 'Plan work'
+      WHEN entity_type = 'auth' THEN 'Authentication'
+      ELSE 'Other activity'
+    END AS label, COUNT(*) AS value
+    FROM activity_log
+    GROUP BY label
+    ORDER BY value DESC, label COLLATE NOCASE
+  `).all();
+
+  return {
+    summary,
+    users,
+    plans,
+    charts: { planStatuses, generationStatuses, platforms, dailyPulse, activityTypes }
+  };
 }
 
 function normalizeTags(row) {

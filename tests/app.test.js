@@ -678,6 +678,10 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   const reportHtml = await reportPage.text();
   assert.match(reportHtml, /Production report/);
   assert.match(reportHtml, /Generator workload/);
+  assert.match(reportHtml, /Production pulse/);
+  assert.match(reportHtml, /id="planStatusChart"/);
+  assert.match(reportHtml, /id="platformCreditsChart"/);
+  assert.match(reportHtml, /window\.__REPORT_DATA__/);
   assert.match(reportHtml, /Docker integration shot/);
   assert.match(reportHtml, /12/);
   assert.match(reportHtml, /\$9\.00/);

@@ -32,6 +32,37 @@
             <% }) %>
           </section>
 
+          <section class="mt-7 grid gap-4 xl:grid-cols-12" aria-label="Production analytics">
+            <article class="report-chart-card xl:col-span-8">
+              <div class="report-chart-heading"><div><div class="report-chart-eyebrow">Last 14 days</div><h2>Production pulse</h2><p>Daily generations, credits used, cost, and recorded activity.</p></div><div class="report-live-badge"><span></span>Live data</div></div>
+              <div id="productionPulseChart" class="report-chart-stage report-chart-stage-wide" role="img" aria-label="Fourteen day production activity chart"></div>
+            </article>
+            <article class="report-chart-card xl:col-span-4">
+              <div class="report-chart-heading"><div><div class="report-chart-eyebrow">Pipeline</div><h2>Plan status</h2><p>Current approval balance across all plans.</p></div></div>
+              <div id="planStatusChart" class="report-chart-stage" role="img" aria-label="Plan status pie chart"></div>
+            </article>
+            <article class="report-chart-card xl:col-span-4">
+              <div class="report-chart-heading"><div><div class="report-chart-eyebrow">Credits & spend</div><h2>Platform mix</h2><p>Token or credit use grouped by generation platform.</p></div></div>
+              <div id="platformCreditsChart" class="report-chart-stage" role="img" aria-label="Credits by platform pie chart"></div>
+            </article>
+            <article class="report-chart-card xl:col-span-4">
+              <div class="report-chart-heading"><div><div class="report-chart-eyebrow">Contributors</div><h2>User activity</h2><p>Recorded workspace actions by team member.</p></div></div>
+              <div id="userActivityChart" class="report-chart-stage" role="img" aria-label="User activity bar chart"></div>
+            </article>
+            <article class="report-chart-card xl:col-span-4">
+              <div class="report-chart-heading"><div><div class="report-chart-eyebrow">Production weight</div><h2>Highest-cost plans</h2><p>Plans ranked by their saved generation costs.</p></div></div>
+              <div id="planCostChart" class="report-chart-stage" role="img" aria-label="Plan generation cost bar chart"></div>
+            </article>
+            <article class="report-chart-card xl:col-span-5">
+              <div class="report-chart-heading"><div><div class="report-chart-eyebrow">Generation health</div><h2>Approval progress</h2><p>Approved results compared with work still in progress.</p></div></div>
+              <div id="generationStatusChart" class="report-chart-stage" role="img" aria-label="Generation approval pie chart"></div>
+            </article>
+            <article class="report-chart-card xl:col-span-7">
+              <div class="report-chart-heading"><div><div class="report-chart-eyebrow">Audit composition</div><h2>Activity breakdown</h2><p>The actions shaping this workspace, grouped into useful categories.</p></div></div>
+              <div id="activityTypeChart" class="report-chart-stage" role="img" aria-label="Activity category bar chart"></div>
+            </article>
+          </section>
+
           <section class="mt-7 overflow-hidden rounded-3xl border border-white/[0.07] bg-[#101113]">
             <div class="flex flex-col justify-between gap-4 border-b border-white/[0.07] p-5 sm:flex-row sm:items-end"><div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">People</div><h2 class="mt-2 text-xl font-semibold">Generator workload</h2><p class="mt-1 text-xs text-zinc-600">All accounts are included so production and supervisory work remain auditable.</p></div><input id="reportUserSearch" class="field h-10 w-full py-0 text-xs sm:w-64" placeholder="Search users or roles" /></div>
             <div class="overflow-x-auto"><table class="w-full min-w-[900px] text-left text-xs"><thead class="bg-black/20 text-[9px] uppercase tracking-[0.12em] text-zinc-600"><tr><th class="px-5 py-3">User</th><th class="px-4 py-3">Role</th><th class="px-4 py-3 text-right">Plans</th><th class="px-4 py-3 text-right">Generations</th><th class="px-4 py-3 text-right">Approved</th><th class="px-4 py-3 text-right">Tokens</th><th class="px-4 py-3 text-right">Cost</th><th class="px-4 py-3 text-right">Activities</th><th class="px-5 py-3 text-right">Approvals</th></tr></thead><tbody id="reportUsersBody" class="divide-y divide-white/[0.055]">
@@ -48,7 +79,7 @@
         </main>
       </div>
     </div>
-    <script>window.__AI_HUB_BASE__ = <%- JSON.stringify(basePath) %>;</script>
+    <script>window.__AI_HUB_BASE__ = <%- JSON.stringify(basePath) %>; window.__REPORT_DATA__ = <%- JSON.stringify({ charts: report.charts, users: report.users, plans: report.plans }).replace(/</g, '\\u003c') %>;</script>
     <script src="<%= basePath %>/vendor/lucide/lucide.js"></script>
     <script src="<%= basePath %>/js/report.js" defer></script>
   </body>
