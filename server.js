@@ -38,6 +38,7 @@ import {
   listActivities,
   listLibraryAssets,
   listLibraryAssetTags,
+  saveLibraryAssetTag,
   listAccounts,
   listPrompts,
   listResources,
@@ -813,6 +814,7 @@ async function streamStoredFile(record, request, response) {
   response.setHeader("Accept-Ranges", "bytes");
   response.setHeader("Cache-Control", "private, max-age=3600");
   response.setHeader("Content-Type", record.mime_type || "application/octet-stream");
+  if (record.mime_type === "application/pdf") response.setHeader("X-Frame-Options", "SAMEORIGIN");
   response.setHeader("Content-Disposition", contentDisposition(record.original_name, !forceDownload && canPreviewInline(record.mime_type)));
   response.setHeader("ETag", `\"${record.checksum_sha256}\"`);
   response.setHeader("Last-Modified", fileStat.mtime.toUTCString());
@@ -998,6 +1000,14 @@ router.get("/api/library-assets", (_request, response) => {
     categories: getGenerationCatalogs().asset_categories.map((item) => item.name),
     tags: listLibraryAssetTags()
   });
+});
+
+router.post("/api/library-asset-tags", requirePermission("canManageLibraries"), (request, response) => {
+  try {
+    response.status(201).json({ tag: saveLibraryAssetTag(request.body.tag) });
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
 });
 
 router.post("/api/library-assets", requirePermission("canManageLibraries"), (request, response) => {

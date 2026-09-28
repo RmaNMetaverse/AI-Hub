@@ -1472,6 +1472,13 @@ export function listLibraryAssetTags() {
   return db.prepare("SELECT name FROM asset_library_tags ORDER BY name COLLATE NOCASE").all().map((row) => row.name);
 }
 
+export function saveLibraryAssetTag(value) {
+  const name = String(value || "").trim().replace(/\s+/g, " ");
+  if (!name || name.length > 80 || name.includes(",")) throw new Error("Enter a tag of up to 80 characters without a comma");
+  db.prepare("INSERT OR IGNORE INTO asset_library_tags (name) VALUES (?)").run(name);
+  return db.prepare("SELECT name FROM asset_library_tags WHERE name = ? COLLATE NOCASE").get(name).name;
+}
+
 export function createLibraryAsset(input) {
   const files = Array.isArray(input.files) ? input.files : [];
   if (!files.length) throw new Error("Choose at least one file to upload");

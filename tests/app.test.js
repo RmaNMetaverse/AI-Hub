@@ -163,7 +163,12 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
 
   const assetPage = await request("/asset-library", { cookie: creatorCookie });
   assert.equal(assetPage.status, 200);
-  assert.match(await assetPage.text(), /asset-category-filter/);
+  const assetPageHtml = await assetPage.text();
+  assert.match(assetPageHtml, /asset-category-filter/);
+  assert.match(assetPageHtml, /assetViewerModal/);
+  const tagResponse = await request("/api/library-asset-tags", { method: "POST", cookie: creatorCookie, body: { tag: "turnaround" } });
+  assert.equal(tagResponse.status, 201);
+  assert.deepEqual(await tagResponse.json(), { tag: "turnaround" });
   const assetBytes = new Uint8Array([37, 80, 68, 70, 45, 49]);
   const assetForm = new FormData();
   assetForm.append("title", "Lead character sheet");
@@ -179,12 +184,15 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(savedAsset.kind, "document");
   assert.deepEqual(savedAsset.tags, ["lead", "costume"]);
   assert.equal(savedAsset.files.length, 2);
+  const pdfPreview = await fetch(`${origin}${savedAsset.files[0].content_url}`, { headers: { cookie: creatorCookie } });
+  assert.equal(pdfPreview.headers.get("x-frame-options"), "SAMEORIGIN");
+  assert.match(pdfPreview.headers.get("content-disposition"), /^inline/);
   const secondAssetFile = await fetch(`${origin}${savedAsset.files[1].content_url}`, { headers: { cookie: creatorCookie } });
   assert.deepEqual(new Uint8Array(await secondAssetFile.arrayBuffer()), new Uint8Array([80, 78, 71]));
   const assetList = await request("/api/library-assets", { cookie: creatorCookie });
   const assetPayload = await assetList.json();
   assert.equal(assetPayload.assets[0].title, "Lead character sheet");
-  assert.deepEqual(assetPayload.tags, ["costume", "lead"]);
+  assert.deepEqual(assetPayload.tags, ["costume", "lead", "turnaround"]);
 
   const catalogAccess = await request("/api/admin/catalogs", { cookie: creatorCookie });
   assert.equal(catalogAccess.status, 403);

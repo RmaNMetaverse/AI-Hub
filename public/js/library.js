@@ -15,6 +15,9 @@ const empty = document.querySelector("#libraryEmpty");
 const count = document.querySelector("#libraryCount");
 const toast = document.querySelector("#libraryToast");
 const modal = document.querySelector("#libraryModal");
+const assetViewer = document.querySelector("#assetViewerModal");
+let assetTagValues = [];
+let pendingTagSave = Promise.resolve();
 
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
@@ -59,8 +62,39 @@ function promptCard(prompt) {
 function assetCard(asset) {
   const files = asset.files?.length ? asset.files : [asset];
   const primary = files[0];
-  const fileList = files.slice(0, 3).map((file) => `<a href="${escapeHtml(file.content_url)}" target="_blank" rel="noopener" class="block truncate text-[9px] text-zinc-600 transition hover:text-acid">${escapeHtml(file.original_name)}</a>`).join("");
-  return `<article class="group overflow-hidden rounded-3xl border border-white/[0.07] bg-[#101113]" data-asset-id="${asset.id}"><a href="${escapeHtml(primary.content_url)}" target="_blank" rel="noopener" class="block overflow-hidden bg-black/20">${mediaPreview(primary)}</a><div class="p-4"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><div class="text-[9px] font-semibold uppercase tracking-[0.13em] text-acid">${escapeHtml(asset.category)}</div><h2 class="mt-2 truncate text-sm font-semibold text-zinc-200" title="${escapeHtml(asset.title)}">${escapeHtml(asset.title)}</h2></div>${permissions.canManageLibraries ? `<button class="delete-asset icon-button h-8 w-8 shrink-0 text-red-300/55"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ""}</div><p class="mt-2 line-clamp-2 min-h-9 text-[10px] leading-[18px] text-zinc-600">${escapeHtml(asset.description || primary.original_name)}</p><div class="mt-3 flex flex-wrap gap-1">${asset.tags.map((tag) => `<span class="rounded-full bg-white/[0.035] px-2 py-1 text-[8px] text-zinc-600">${escapeHtml(tag)}</span>`).join("")}</div><div class="mt-4 border-t border-white/[0.06] pt-3"><div class="flex items-center gap-2"><span class="text-[9px] text-zinc-700">${files.length} file${files.length === 1 ? "" : "s"} · ${formatBytes(files.reduce((total, file) => total + Number(file.size_bytes || 0), 0))}</span><a href="${escapeHtml(primary.download_url)}" class="icon-button ml-auto h-8 w-8 shrink-0" aria-label="Download ${escapeHtml(primary.original_name)}"><i data-lucide="download" class="h-3.5 w-3.5"></i></a></div><div class="mt-2 space-y-1">${fileList}${files.length > 3 ? `<div class="text-[9px] text-zinc-700">+${files.length - 3} more files</div>` : ""}</div></div></div></article>`;
+  return `<article class="group relative overflow-hidden rounded-3xl border border-white/[0.07] bg-[#101113] transition hover:-translate-y-0.5 hover:border-white/20" data-asset-id="${asset.id}"><button type="button" class="open-asset block w-full text-left" aria-label="Open ${escapeHtml(asset.title)}"><div class="overflow-hidden bg-black/20">${mediaPreview(primary)}</div><div class="p-4"><div class="text-[9px] font-semibold uppercase tracking-[0.13em] text-acid">${escapeHtml(asset.category)}</div><h2 class="mt-2 truncate text-sm font-semibold text-zinc-200">${escapeHtml(asset.title)}</h2><p class="mt-2 line-clamp-2 min-h-9 text-[10px] leading-[18px] text-zinc-600">${escapeHtml(asset.description || primary.original_name)}</p><div class="mt-3 flex flex-wrap gap-1">${asset.tags.map((tag) => `<span class="rounded-full bg-white/[0.035] px-2 py-1 text-[8px] text-zinc-600">${escapeHtml(tag)}</span>`).join("")}</div><div class="mt-4 border-t border-white/[0.06] pt-3 text-[10px] text-zinc-600">${files.length} file${files.length === 1 ? "" : "s"} · ${formatBytes(files.reduce((total, file) => total + Number(file.size_bytes || 0), 0))} <span class="text-acid">· View files</span></div></div></button>${permissions.canManageLibraries ? `<button type="button" class="delete-asset icon-button absolute right-3 top-3 bg-black/80 text-red-300/70" aria-label="Delete ${escapeHtml(asset.title)}"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ""}</article>`;
+}
+
+function assetFilePreview(file) {
+  const url = escapeHtml(file.content_url);
+  if (file.kind === "image" && !String(file.mime_type).includes("svg")) return `<img src="${url}" alt="${escapeHtml(file.original_name)}" loading="lazy" class="max-h-[460px] w-full bg-black/30 object-contain" />`;
+  if (file.kind === "video") return `<video src="${url}" controls preload="metadata" class="max-h-[460px] w-full bg-black"></video>`;
+  if (file.kind === "audio") return `<div class="grid min-h-36 place-items-center bg-black/30 p-5"><audio src="${url}" controls preload="metadata" class="w-full"></audio></div>`;
+  if (String(file.mime_type).toLowerCase() === "application/pdf") return `<iframe src="${url}" title="${escapeHtml(file.original_name)}" loading="lazy" class="h-[420px] w-full bg-white"></iframe>`;
+  return `<div class="grid min-h-36 place-items-center bg-black/30 text-zinc-600"><i data-lucide="file-box" class="h-10 w-10"></i></div>`;
+}
+
+function openAssetViewer(asset) {
+  if (!assetViewer) return;
+  assetViewer.querySelector("#assetViewerCategory").textContent = asset.category;
+  assetViewer.querySelector("#assetViewerTitle").textContent = asset.title;
+  assetViewer.querySelector("#assetViewerDescription").textContent = asset.description || "";
+  assetViewer.querySelector("#assetViewerTags").innerHTML = asset.tags.map((tag) => `<span class="rounded-full border border-white/10 px-2.5 py-1 text-[10px] text-zinc-400">${escapeHtml(tag)}</span>`).join("");
+  assetViewer.querySelector("#assetViewerFiles").innerHTML = (asset.files?.length ? asset.files : [asset]).map((file) => `<article class="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-black/20">${assetFilePreview(file)}<div class="flex items-center gap-3 p-3"><div class="min-w-0 flex-1"><div class="truncate text-xs font-semibold text-zinc-200" title="${escapeHtml(file.original_name)}">${escapeHtml(file.original_name)}</div><div class="mt-1 text-[10px] text-zinc-600">${formatBytes(file.size_bytes)}</div></div><a href="${escapeHtml(file.content_url)}" target="_blank" rel="noopener" class="ghost-button h-8 px-3 text-[10px]">Open</a><a href="${escapeHtml(file.download_url)}" class="ghost-button h-8 px-3 text-[10px]">Download</a></div></article>`).join("");
+  assetViewer.classList.remove("hidden");
+  assetViewer.classList.add("flex");
+  requestAnimationFrame(() => assetViewer.querySelector(".modal-card").classList.add("open"));
+  assetViewer.querySelector("#closeAssetViewer").focus();
+  lucide.createIcons();
+}
+
+function closeAssetViewer() {
+  if (!assetViewer) return;
+  assetViewer.querySelectorAll("video, audio").forEach((media) => media.pause());
+  assetViewer.classList.add("hidden");
+  assetViewer.classList.remove("flex");
+  assetViewer.querySelector(".modal-card").classList.remove("open");
+  assetViewer.querySelector("#assetViewerFiles").replaceChildren();
 }
 
 function filteredItems() {
@@ -71,7 +105,7 @@ function filteredItems() {
       : [item.title, item.description, item.original_name, item.uploaded_by_name, ...(item.tags || []), ...(item.files || []).map((file) => file.original_name)].join(" ").toLowerCase();
     return (!needle || haystack.includes(needle))
       && (libraryType !== "assets" || category === "all" || item.category === category)
-      && (libraryType !== "assets" || kind === "all" || item.kind === kind);
+      && (libraryType !== "assets" || kind === "all" || (item.files?.length ? item.files : [item]).some((file) => file.kind === kind));
   });
 }
 
@@ -85,6 +119,10 @@ function render() {
 }
 
 function bindCards() {
+  grid.querySelectorAll(".open-asset").forEach((button) => button.addEventListener("click", () => {
+    const asset = items.find((item) => item.id === Number(button.closest("[data-asset-id]").dataset.assetId));
+    if (asset) openAssetViewer(asset);
+  }));
   grid.querySelectorAll(".copy-prompt").forEach((button) => button.addEventListener("click", async () => {
     const prompt = items.find((item) => item.id === Number(button.closest("[data-prompt-id]").dataset.promptId));
     await navigator.clipboard.writeText(prompt.prompt);
@@ -113,7 +151,7 @@ function bindCards() {
   grid.querySelectorAll(".delete-asset").forEach((button) => button.addEventListener("click", async () => {
     const id = Number(button.closest("[data-asset-id]").dataset.assetId);
     const asset = items.find((item) => item.id === id);
-    if (!window.confirm(`Delete “${asset.title}” and its stored file?`)) return;
+    if (!window.confirm(`Delete “${asset.title}” and all its stored files?`)) return;
     const response = await fetch(`/api/library-assets/${id}`, { method: "DELETE" });
     if (!response.ok) return showToast((await response.json()).error || "Could not delete asset");
     items = items.filter((item) => item.id !== id); render(); showToast("Asset deleted");
@@ -121,7 +159,16 @@ function bindCards() {
 }
 
 function openModal() { modal?.classList.remove("hidden"); modal?.classList.add("flex"); requestAnimationFrame(() => modal?.querySelector(".modal-card")?.classList.add("open")); }
-function closeModal() { modal?.querySelector(".modal-card")?.classList.remove("open"); setTimeout(() => { modal?.classList.add("hidden"); modal?.classList.remove("flex"); }, 180); }
+function closeModal() {
+  modal?.querySelector(".modal-card")?.classList.remove("open");
+  if (libraryType === "assets") {
+    modal?.querySelector("form")?.reset();
+    assetTagValues = [];
+    renderSelectedTags();
+    renderAssetTagSuggestions();
+  }
+  setTimeout(() => { modal?.classList.add("hidden"); modal?.classList.remove("flex"); }, 180);
+}
 
 async function refreshPrompts() {
   const response = await fetch("/api/prompts");
@@ -152,29 +199,67 @@ document.querySelectorAll(".asset-kind-filter").forEach((select) => select.addEv
 document.querySelector("#addLibraryItem")?.addEventListener("click", openModal);
 document.querySelectorAll(".library-modal-close").forEach((button) => button.addEventListener("click", closeModal));
 modal?.addEventListener("click", (event) => { if (event.target === modal) closeModal(); });
+assetViewer?.addEventListener("click", (event) => { if (event.target === assetViewer) closeAssetViewer(); });
+document.querySelector("#closeAssetViewer")?.addEventListener("click", closeAssetViewer);
 document.querySelector(".library-mobile-menu")?.addEventListener("click", () => document.querySelector(".app-sidebar").classList.toggle("mobile-open"));
 document.querySelector(".library-logout")?.addEventListener("click", async () => { await fetch("/auth/logout", { method: "POST" }); window.location.assign(`${window.__AI_HUB_BASE__ || ""}/login`); });
 document.querySelectorAll("[data-planned-feature]").forEach((button) => button.addEventListener("click", () => showToast(`${button.dataset.plannedFeature} is planned for a future update`)));
 
-function addAssetTag(tag) {
+function renderSelectedTags() {
+  const selected = document.querySelector("#assetSelectedTags");
+  if (!selected) return;
+  selected.innerHTML = assetTagValues.map((tag) => `<button type="button" class="asset-selected-tag rounded-full border border-acid/30 bg-acid/10 px-2.5 py-1 text-[10px] text-acid" data-tag="${escapeHtml(tag)}" aria-label="Remove ${escapeHtml(tag)}">${escapeHtml(tag)} ×</button>`).join("");
+  selected.querySelectorAll(".asset-selected-tag").forEach((button) => button.addEventListener("click", () => {
+    assetTagValues = assetTagValues.filter((tag) => tag !== button.dataset.tag);
+    renderSelectedTags();
+    renderAssetTagSuggestions();
+  }));
+  document.querySelector("#assetTagsValue").value = assetTagValues.join(", ");
+}
+
+async function addAssetTag(value, { clearInput = true } = {}) {
   const input = document.querySelector("#assetTagsInput");
+  const tag = String(value || "").trim().replace(/\s+/g, " ");
   if (!input || !tag) return;
-  const tags = input.value.split(",").map((value) => value.trim()).filter(Boolean);
-  if (!tags.some((value) => value.toLocaleLowerCase() === tag.toLocaleLowerCase())) tags.push(tag);
-  input.value = tags.join(", ");
-  input.focus();
+  if (tag.length > 80 || tag.includes(",")) return showToast("Each tag must be under 80 characters without a comma");
+  if (assetTagValues.some((item) => item.toLocaleLowerCase() === tag.toLocaleLowerCase())) { if (clearInput) input.value = ""; return; }
+  const response = await fetch("/api/library-asset-tags", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tag }) });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || "Could not save tag");
+  assetTagValues.push(payload.tag);
+  if (!assetTags.some((item) => item.toLocaleLowerCase() === payload.tag.toLocaleLowerCase())) assetTags.push(payload.tag);
+  assetTags.sort((a, b) => a.localeCompare(b));
+  if (clearInput && input.value.trim() === tag) input.value = "";
+  renderSelectedTags();
+  renderAssetTagSuggestions();
+}
+
+function queueAssetTag(value, options) {
+  pendingTagSave = pendingTagSave.catch(() => {}).then(() => addAssetTag(value, options));
+  pendingTagSave.catch((error) => showToast(error.message));
+  return pendingTagSave;
 }
 
 function renderAssetTagSuggestions() {
-  const options = document.querySelector("#assetTagOptions");
   const suggestions = document.querySelector("#assetTagSuggestions");
-  if (options) options.innerHTML = assetTags.map((tag) => `<option value="${escapeHtml(tag)}"></option>`).join("");
   if (!suggestions) return;
-  suggestions.innerHTML = assetTags.map((tag) => `<button type="button" class="asset-tag-suggestion rounded-full border border-white/[0.08] px-2 py-1 text-[9px] text-zinc-500 transition hover:border-acid/40 hover:text-acid" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join("");
-  suggestions.querySelectorAll(".asset-tag-suggestion").forEach((button) => button.addEventListener("click", () => addAssetTag(button.dataset.tag)));
+  const needle = document.querySelector("#assetTagsInput").value.trim().toLocaleLowerCase();
+  suggestions.innerHTML = assetTags.filter((tag) => !assetTagValues.some((selected) => selected.toLocaleLowerCase() === tag.toLocaleLowerCase()) && (!needle || tag.toLocaleLowerCase().includes(needle))).slice(0, 12).map((tag) => `<button type="button" class="asset-tag-suggestion rounded-full border border-white/[0.08] px-2 py-1 text-[9px] text-zinc-500 transition hover:border-acid/40 hover:text-acid" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join("");
+  suggestions.querySelectorAll(".asset-tag-suggestion").forEach((button) => button.addEventListener("click", () => { void queueAssetTag(button.dataset.tag); }));
 }
 
 renderAssetTagSuggestions();
+document.querySelector("#assetTagsInput")?.addEventListener("input", (event) => {
+  if (event.target.value.includes(",")) {
+    const parts = event.target.value.split(",");
+    event.target.value = parts.pop();
+    parts.forEach((part) => { if (part.trim()) void queueAssetTag(part, { clearInput: false }); });
+  }
+  renderAssetTagSuggestions();
+});
+document.querySelector("#assetTagsInput")?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") { event.preventDefault(); void queueAssetTag(event.target.value); }
+});
 
 document.querySelector("#promptAssetPicker")?.addEventListener("change", async (event) => {
   const files = [...event.target.files]; event.target.value = "";
@@ -199,6 +284,9 @@ document.querySelector("#libraryForm")?.addEventListener("submit", async (event)
       await refreshPrompts();
       showToast("Prompt saved");
     } else {
+      const pendingTag = form.querySelector("#assetTagsInput").value.trim();
+      if (pendingTag) await queueAssetTag(pendingTag);
+      else await pendingTagSave;
       const data = new FormData(form);
       const files = [...form.elements.files.files];
       if (!files.length) throw new Error("Choose at least one file to upload");
@@ -212,10 +300,10 @@ document.querySelector("#libraryForm")?.addEventListener("submit", async (event)
       renderAssetTagSuggestions();
       render(); showToast(`${payload.files?.length || 1} file${payload.files?.length === 1 ? "" : "s"} uploaded`);
     }
-    form.reset(); closeModal();
+    form.reset(); assetTagValues = []; renderSelectedTags(); renderAssetTagSuggestions(); closeModal();
   } catch (error) { showToast(error.message); }
   finally { button.disabled = false; }
 });
 
-document.addEventListener("keydown", (event) => { if (event.key === "Escape" && modal?.classList.contains("flex")) closeModal(); });
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") { if (assetViewer?.classList.contains("flex")) closeAssetViewer(); else if (modal?.classList.contains("flex")) closeModal(); } });
 render();

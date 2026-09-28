@@ -174,7 +174,7 @@ export async function removeStoredFile(storageKey) {
 const inlineTypes = new Set([
   "image/jpeg", "image/png", "image/webp", "image/gif", "image/avif",
   "video/mp4", "video/webm", "video/quicktime", "video/x-matroska",
-  "audio/mpeg", "audio/mp4", "audio/wav", "audio/ogg", "audio/webm"
+  "audio/mpeg", "audio/mp4", "audio/wav", "audio/ogg", "audio/webm", "application/pdf"
 ]);
 
 export function canPreviewInline(mimeType) {
