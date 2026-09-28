@@ -222,7 +222,8 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
       title: "Docker integration shot",
       description: "Created by the containerized integration test",
       media_type: "Video",
-      model: "Seedance 2.5"
+      model: "Seedance 2.5",
+      due_date: "2099-01-01T12:00"
     }
   });
   assert.equal(planResponse.status, 201);
@@ -231,6 +232,7 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(plan.sequence_number, 99);
   assert.equal(plan.shot_number, 7);
   assert.equal(plan.shot_code, "SQ99-SH007");
+  assert.equal(Object.hasOwn(plan, "due_date"), false);
 
   for (const numbers of [
     {}, { sequence_number: 99 }, { shot_number: 7 },
@@ -267,10 +269,12 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.match(homeHtml, /id="shotFilter"/);
   assert.doesNotMatch(homeHtml, /id="boardView"/);
   const newPlanFormHtml = homeHtml.match(/<form id="newPlanForm"[\s\S]*?<\/form>/)?.[0] || "";
-  assert.match(newPlanFormHtml, /type="datetime-local" name="due_date"/);
+  assert.doesNotMatch(newPlanFormHtml, /due_date|Due date/i);
   assert.doesNotMatch(newPlanFormHtml, /name="media_type"/);
   assert.doesNotMatch(newPlanFormHtml, /name="model"/);
-  assert.doesNotMatch(newPlanFormHtml, /name="description"/);
+  assert.match(newPlanFormHtml, /name="description"/);
+  assert.match(newPlanFormHtml, /name="assets"/);
+  assert.match(newPlanFormHtml, /name="asset_role"/);
   assert.doesNotMatch(newPlanFormHtml, /name="prompt"/);
   for (const key of ["sequence_number", "shot_number"]) {
     const changed = await request(`/api/plans/${plan.id}`, { method: "PATCH", cookie: creatorCookie, body: { [key]: 9 } });
@@ -296,6 +300,7 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   resourceForm.append("sequence_number", plan.sequence_number);
   resourceForm.append("shot_number", plan.shot_number);
   resourceForm.append("category", "Reference");
+  resourceForm.append("asset_role", "First Frame");
   resourceForm.append("notes", "Containerized upload fixture");
   const resourceBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 65, 73, 72, 85, 66]);
   resourceForm.append("file", new Blob([resourceBytes], { type: "image/png" }), "reference-frame.png");
@@ -308,6 +313,7 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   const resource = await resourceResponse.json();
   assert.equal(resource.original_name, "reference-frame.png");
   assert.equal(resource.category, "Reference");
+  assert.equal(resource.asset_role, "First Frame");
   assert.equal(resource.kind, "image");
   assert.equal(resource.size_bytes, resourceBytes.byteLength);
   assert.match(resource.checksum_sha256, /^[a-f0-9]{64}$/);
@@ -332,6 +338,7 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   outputForm.append("sequence_number", plan.sequence_number);
   outputForm.append("shot_number", plan.shot_number);
   outputForm.append("category", "Generation");
+  outputForm.append("asset_role", "Output");
   outputForm.append("notes", "Primary generated output");
   const outputBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 79, 85, 84, 80, 85, 84]);
   outputForm.append("file", new Blob([outputBytes], { type: "image/png" }), "generation-output.png");
@@ -575,7 +582,9 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.match(html, /Docker integration shot/);
   assert.match(html, /Current final version/);
   assert.match(html, /Generation timeline/);
-  assert.match(html, /Upload once, reuse everywhere/);
+  assert.match(html, /Brief, notes, and assets/);
+  assert.match(html, /id="assetBriefForm"/);
+  assert.match(html, />Assets /);
   assert.match(html, /v1/);
   assert.match(html, /Higgsfield/);
   assert.match(html, /generation-output\.png/);
@@ -585,6 +594,9 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.match(html, /id="sequenceFilter"/);
   assert.match(html, /id="generationSequenceNumberInput"/);
   assert.match(html, /id="generationShotNumberInput"/);
+  assert.doesNotMatch(html, /id="generationUploadRole"/);
+  assert.doesNotMatch(html, /Due date|>Due</i);
+  assert.doesNotMatch(html, />Notes</);
   assert.doesNotMatch(html, />Shot library/);
   assert.doesNotMatch(html, />Brief &amp; prompt/);
   const filteredShotPage = await request(`/plans/${plan.id}?sequence_number=99&shot_number=7`, { cookie: supervisorCookie });

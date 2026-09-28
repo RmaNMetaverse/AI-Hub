@@ -276,6 +276,7 @@ ensureColumn("generations", "token_price_snapshot", "REAL NOT NULL DEFAULT 0");
 ensureColumn("generations", "created_by", "INTEGER");
 ensureColumn("generations", "status", "TEXT NOT NULL DEFAULT 'WIP'");
 ensureColumn("generations", "updated_at", "TEXT");
+ensureColumn("resources", "asset_role", "TEXT NOT NULL DEFAULT 'Other Input'");
 ensureColumn("users", "role_id", "INTEGER REFERENCES workspace_roles(id)");
 db.exec(`
   CREATE INDEX IF NOT EXISTS ai_plans_selected_generation_idx ON ai_plans(selected_generation_id);
@@ -1152,10 +1153,10 @@ export function createResource(input) {
     const result = db.prepare(`
       INSERT INTO resources (
         plan_id, uploaded_by, original_name, storage_key, mime_type, kind,
-        category, size_bytes, checksum_sha256, notes
+        category, asset_role, size_bytes, checksum_sha256, notes
       ) VALUES (
         @planId, @uploadedBy, @originalName, @storageKey, @mimeType, @kind,
-        @category, @sizeBytes, @checksumSha256, @notes
+        @category, @assetRole, @sizeBytes, @checksumSha256, @notes
       )
     `).run(input);
     db.prepare("UPDATE ai_plans SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(input.planId);
@@ -1164,14 +1165,14 @@ export function createResource(input) {
   return getResource(resourceId);
 }
 
-export function updateResource(id, { category, notes }) {
+export function updateResource(id, { category, assetRole, notes }) {
   const current = getResource(id);
   if (!current) throw new Error("Resource not found");
   db.prepare(`
     UPDATE resources
-    SET category = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
+    SET category = ?, asset_role = ?, notes = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
-  `).run(category ?? current.category, notes ?? current.notes, id);
+  `).run(category ?? current.category, assetRole ?? current.asset_role, notes ?? current.notes, id);
   db.prepare("UPDATE ai_plans SET updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(current.plan_id);
   return getResource(id);
 }
@@ -1346,7 +1347,7 @@ export function createPlan(input) {
   `).run(
     project.id, shotCode, title, String(input.description || ""), status,
     String(input.media_type || "Video"), String(input.owner || "Unassigned"),
-    model, input.due_date || null,
+    model, null,
     String(input.priority || "Medium"), String(input.next_action || "Complete creative brief"),
     String(input.prompt || ""), String(input.aspect_ratio || "16:9"),
     String(input.duration || "5 sec"), String(input.tags || ""),
@@ -1382,7 +1383,7 @@ export function updatePlan(id, input) {
     input = { ...input, model: requestedModel };
   }
 
-  const fields = ["title", "description", "owner", "model", "quality", "due_date", "priority", "next_action", "issue", "prompt", "negative_prompt", "aspect_ratio", "duration", "tags"];
+  const fields = ["title", "description", "owner", "model", "quality", "priority", "next_action", "issue", "prompt", "negative_prompt", "aspect_ratio", "duration", "tags"];
   const changes = {};
   fields.forEach((field) => {
     if (Object.hasOwn(input, field)) {

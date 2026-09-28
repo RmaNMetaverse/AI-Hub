@@ -147,12 +147,6 @@ function render() {
   lucide.createIcons();
 }
 
-function openPlan(id) {
-  const query = window.shotNavigation.query();
-  const base = window.__AI_HUB_BASE__ || "";
-  window.location.assign(`${base}/plans/${id}${query ? `?${query}` : ""}`);
-}
-
 function openModal() {
   for (const name of ["sequence_number", "shot_number"]) {
     const value = document.querySelector("#shotNavigationForm").elements[name].value;
@@ -190,24 +184,63 @@ document.querySelector("#closeModalButton").addEventListener("click", closeModal
 document.querySelector("#cancelModalButton").addEventListener("click", closeModal);
 document.querySelector("#modalBackdrop").addEventListener("click", closeModal);
 document.querySelector("#mobileMenuButton").addEventListener("click", () => document.querySelector(".app-sidebar").classList.toggle("mobile-open"));
+document.querySelector("#newPlanAssetInput")?.addEventListener("change", (event) => {
+  const count = event.target.files.length;
+  document.querySelector("#newPlanAssetStatus").textContent = count
+    ? `${count} file${count === 1 ? "" : "s"} selected for this plan.`
+    : "You can select multiple files. They will be attached after the plan is created.";
+});
 
 els.form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = els.form.querySelector("button[type='submit']");
   button.disabled = true;
   button.querySelector("span").textContent = "Creating...";
-  const body = Object.fromEntries(new FormData(els.form));
-  const response = await fetch("/api/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const result = await response.json();
-  button.disabled = false;
-  button.querySelector("span").textContent = "Create plan";
-  if (!response.ok) return showToast(result.error || "Could not create plan");
-  state.plans.unshift(result);
-  els.form.reset();
-  closeModal();
-  render();
-  showToast("AI Plan created");
-  setTimeout(() => openPlan(result.id), 260);
+  const formData = new FormData(els.form);
+  const files = [...document.querySelector("#newPlanAssetInput").files];
+  const assetRole = String(formData.get("asset_role") || "Other Input");
+  const body = {
+    sequence_number: formData.get("sequence_number"),
+    shot_number: formData.get("shot_number"),
+    title: formData.get("title"),
+    description: formData.get("description")
+  };
+  try {
+    const response = await fetch("/api/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const result = await response.json();
+    if (!response.ok) return showToast(result.error || "Could not create plan");
+
+    let uploaded = 0;
+    for (const file of files) {
+      button.querySelector("span").textContent = `Uploading ${uploaded + 1} of ${files.length}...`;
+      const upload = new FormData();
+      upload.append("sequence_number", result.sequence_number);
+      upload.append("shot_number", result.shot_number);
+      upload.append("category", "Reference");
+      upload.append("asset_role", assetRole);
+      upload.append("notes", "");
+      upload.append("file", file, file.name);
+      const uploadResponse = await fetch(`/api/plans/${result.id}/resources`, { method: "POST", body: upload });
+      if (uploadResponse.ok) uploaded += 1;
+    }
+
+    const refreshedResponse = await fetch(`/api/plans?sequence_number=${result.sequence_number}&shot_number=${result.shot_number}`);
+    const refreshedPlans = refreshedResponse.ok ? await refreshedResponse.json() : [];
+    const refreshed = refreshedPlans.find((plan) => plan.id === result.id) || result;
+    state.plans = [refreshed, ...state.plans.filter((plan) => plan.id !== result.id)];
+    els.form.reset();
+    document.querySelector("#newPlanAssetStatus").textContent = "You can select multiple files. They will be attached after the plan is created.";
+    closeModal();
+    render();
+    showToast(files.length && uploaded !== files.length
+      ? `Plan created; ${uploaded} of ${files.length} assets uploaded`
+      : `AI Plan created${uploaded ? ` with ${uploaded} asset${uploaded === 1 ? "" : "s"}` : ""}`);
+  } catch {
+    showToast("The request was interrupted. Refresh the page to confirm the plan and its assets.");
+  } finally {
+    button.disabled = false;
+    button.querySelector("span").textContent = "Create plan";
+  }
 });
 
 const coverModal = document.querySelector("#coverModal");

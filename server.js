@@ -105,7 +105,7 @@ function resourceForClient(resource) {
 
 function planCardForClient(plan) {
   if (!plan) return null;
-  const { custom_cover_id: _customCoverId, automatic_cover_id: _automaticCoverId, ...publicPlan } = plan;
+  const { custom_cover_id: _customCoverId, automatic_cover_id: _automaticCoverId, due_date: _dueDate, ...publicPlan } = plan;
   const coverRoute = plan.cover_source === "custom" ? "/plan-covers" : "/resources";
   return {
     ...publicPlan,
@@ -115,12 +115,13 @@ function planCardForClient(plan) {
 
 function planForClient(plan) {
   if (!plan) return null;
+  const { due_date: _dueDate, ...publicPlan } = plan;
   const generationForClient = (generation) => generation ? {
     ...generation,
     resources: Array.isArray(generation.resources) ? generation.resources.map(resourceForClient) : []
   } : null;
   return {
-    ...plan,
+    ...publicPlan,
     cover_url: plan.cover_id ? `${basePath}${plan.cover_source === "custom" ? "/plan-covers" : "/resources"}/${plan.cover_id}/content` : null,
     resources: Array.isArray(plan.resources) ? plan.resources.map(resourceForClient) : plan.resources,
     generations: Array.isArray(plan.generations) ? plan.generations.map(generationForClient) : [],
@@ -533,7 +534,8 @@ router.get("/api/plans/:id/resources", (request, response) => {
   response.json({
     resources: listResources(plan.id).map(resourceForClient),
     maxUploadBytes,
-    categories: resourceCategories
+    categories: resourceCategories,
+    roles: getGenerationCatalogs().resource_roles.map((item) => item.name)
   });
 });
 
@@ -628,6 +630,11 @@ router.post("/api/plans/:id/resources", requirePermission("canEditPlans"), (requ
       const kind = resourceKind(request.file.mimetype, originalName);
       const suggestedCategory = kind === "audio" ? "Audio" : kind === "document" ? "Document" : "Generation";
       const category = resourceCategories.includes(request.body.category) ? request.body.category : suggestedCategory;
+      const availableRoles = getGenerationCatalogs().resource_roles.map((item) => item.name);
+      const requestedRole = String(request.body.asset_role || "").trim();
+      const assetRole = availableRoles.includes(requestedRole)
+        ? requestedRole
+        : (availableRoles.includes("Other Input") ? "Other Input" : availableRoles.find((role) => role !== "Output") || "Other Input");
       const notes = String(request.body.notes || "").trim().slice(0, 2000);
       const checksumSha256 = await checksumFile(request.file.path);
       const resource = createResource({
@@ -638,6 +645,7 @@ router.post("/api/plans/:id/resources", requirePermission("canEditPlans"), (requ
         mimeType: String(request.file.mimetype || "application/octet-stream").slice(0, 160),
         kind,
         category,
+        assetRole,
         sizeBytes: request.file.size,
         checksumSha256,
         notes
@@ -656,8 +664,11 @@ router.patch("/api/resources/:id", requirePermission("canEditPlans"), (request, 
     if (!current) return response.status(404).json({ error: "Resource not found" });
     const category = request.body.category === undefined ? current.category : String(request.body.category);
     if (!resourceCategories.includes(category)) return response.status(400).json({ error: "Invalid resource category" });
+    const assetRole = request.body.asset_role === undefined ? current.asset_role : String(request.body.asset_role).trim();
+    const availableRoles = getGenerationCatalogs({ includeInactive: true }).resource_roles.map((item) => item.name);
+    if (!availableRoles.includes(assetRole)) return response.status(400).json({ error: "Invalid asset type" });
     const notes = request.body.notes === undefined ? current.notes : String(request.body.notes).trim().slice(0, 2000);
-    response.json(resourceForClient(updateResource(current.id, { category, notes })));
+    response.json(resourceForClient(updateResource(current.id, { category, assetRole, notes })));
   } catch (error) {
     response.status(400).json({ error: error.message });
   }

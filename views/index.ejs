@@ -152,7 +152,7 @@
 
     <div id="newPlanModal" class="pointer-events-none fixed inset-0 z-[60] hidden place-items-center p-4" aria-hidden="true">
       <button id="modalBackdrop" class="modal-backdrop absolute inset-0 bg-black/75" aria-label="Close new plan form"></button>
-      <div id="modalCard" class="modal-card relative z-10 max-h-[92vh] w-full max-w-[680px] overflow-y-auto rounded-3xl border border-white/10 bg-[#111214] p-5 shadow-float sm:p-7">
+      <div id="modalCard" class="modal-card relative z-10 max-h-[92vh] w-full max-w-[760px] overflow-y-auto rounded-3xl border border-white/10 bg-[#111214] p-5 shadow-float sm:p-7">
         <div class="flex items-start justify-between">
           <div><div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-acid">New production item</div><h2 class="mt-1 text-2xl font-semibold tracking-tight">Create AI Plan</h2></div>
           <button id="closeModalButton" class="icon-button" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button>
@@ -162,7 +162,13 @@
           <label><span class="field-label">#Shot · Plan / Shot number *</span><input name="shot_number" type="number" min="1" max="1000000" step="1" class="field text-2xl" required /></label>
           <p class="text-xs text-zinc-500 sm:col-span-2">Both numbers are required and locked after creation. Every generation and uploaded file belongs to this numbered shot.</p>
           <label class="sm:col-span-2"><span class="field-label">Plan title *</span><input name="title" class="field" placeholder="e.g. Signal discovery" required /></label>
-          <label class="sm:col-span-2"><span class="field-label">Due date and time</span><input type="datetime-local" name="due_date" class="field" /></label>
+          <label class="sm:col-span-2"><span class="field-label">Brief / Notes</span><textarea name="description" class="field min-h-32 resize-y text-sm leading-6" maxlength="20000" placeholder="Describe the shot, creative intent, requirements, continuity notes, or anything the team should know."></textarea></label>
+          <div class="sm:col-span-2 rounded-3xl border border-white/[0.08] bg-black/20 p-4 sm:p-5">
+            <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]">
+              <label><span class="field-label">Upload Assets / Media</span><input id="newPlanAssetInput" name="assets" type="file" multiple class="field p-2 text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-zinc-300" /><span id="newPlanAssetStatus" class="mt-2 block text-[10px] text-zinc-700">You can select multiple files. They will be attached after the plan is created.</span></label>
+              <label><span class="field-label">Asset / Media type</span><select id="newPlanAssetRole" name="asset_role" class="field"><% generationCatalogs.resource_roles.forEach(role => { %><option <%= role.name === 'First Frame' ? 'selected' : '' %>><%= role.name %></option><% }) %></select></label>
+            </div>
+          </div>
           <div class="flex items-center justify-end gap-3 sm:col-span-2">
             <button type="button" id="cancelModalButton" class="ghost-button">Cancel</button>
             <button type="submit" class="primary-button px-6"><span>Create plan</span><i data-lucide="arrow-right" class="h-4 w-4"></i></button>

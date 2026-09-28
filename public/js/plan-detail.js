@@ -251,7 +251,7 @@ document.querySelectorAll(".select-generation-button").forEach((button) => butto
 document.querySelector("#selectGenerationButton")?.addEventListener("click", () => selectGeneration(activeGenerationId));
 document.querySelector("#deleteGenerationButton")?.addEventListener("click", async () => {
   const generation = generationById(activeGenerationId);
-  if (!generation || !window.confirm(`Delete ${generation.version_label}? Linked files will remain in the shot library.`)) return;
+  if (!generation || !window.confirm(`Delete ${generation.version_label}? Linked files will remain in the plan's Assets tab.`)) return;
   const response = await fetch(`/api/generations/${generation.id}`, { method: "DELETE" });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) return showToast(payload.error || "Could not delete generation");
@@ -305,9 +305,9 @@ function renderPlatformOptions(generation) {
 function renderResourcePicker() {
   const picker = document.querySelector("#generationResourcePicker");
   const search = document.querySelector("#generationResourceSearch").value.trim().toLowerCase();
-  const resources = plan.resources.filter((resource) => `${resource.original_name} ${resource.category} ${resource.kind}`.toLowerCase().includes(search));
+  const resources = plan.resources.filter((resource) => `${resource.original_name} ${resource.asset_role || ""} ${resource.category} ${resource.kind}`.toLowerCase().includes(search));
   if (!resources.length) {
-    picker.innerHTML = `<div class="sm:col-span-2 rounded-2xl border border-dashed border-white/10 py-8 text-center text-[11px] text-zinc-700">${plan.resources.length ? "No files match this search." : "The shot library is empty. Upload a file here to begin."}</div>`;
+    picker.innerHTML = `<div class="sm:col-span-2 rounded-2xl border border-dashed border-white/10 py-8 text-center text-[11px] text-zinc-700">${plan.resources.length ? "No files match this search." : "No plan assets are available yet. Add reusable inputs in the Assets tab."}</div>`;
     return;
   }
 
@@ -320,14 +320,19 @@ function renderResourcePicker() {
     return `<div class="generation-resource-option flex items-center gap-3 rounded-2xl border ${selected ? "border-acid/20 bg-acid/[0.025]" : "border-white/[0.06] bg-white/[0.015]"} p-3" data-resource-option="${resource.id}">
       <input type="checkbox" class="generation-resource-checkbox h-4 w-4 accent-[#d6ff45]" data-resource-id="${resource.id}" ${selected ? "checked" : ""} aria-label="Use ${escapeHtml(resource.original_name)}" />
       <span class="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-black/30 text-zinc-600">${thumb}</span>
-      <span class="min-w-0 flex-1"><span class="block truncate text-[11px] font-semibold text-zinc-300">${escapeHtml(resource.original_name)}</span><span class="mt-1 block text-[9px] text-zinc-700">${escapeHtml(resource.category)} · ${formatBytes(resource.size_bytes)}${resource.generation_usage_count ? ` · used ${resource.generation_usage_count}×` : ""}</span></span>
+      <span class="min-w-0 flex-1"><span class="block truncate text-[11px] font-semibold text-zinc-300">${escapeHtml(resource.original_name)}</span><span class="mt-1 block text-[9px] text-zinc-700">${escapeHtml(resource.asset_role || resource.category)} · ${formatBytes(resource.size_bytes)}${resource.generation_usage_count ? ` · used ${resource.generation_usage_count}×` : ""}</span></span>
       <select class="generation-resource-role field h-9 w-36 shrink-0 py-0 pl-2.5 pr-7 text-[10px]" data-resource-id="${resource.id}" ${selected ? "" : "disabled"}>${resourceRoleOptions(role)}</select>
     </div>`;
   }).join("");
 
   picker.querySelectorAll(".generation-resource-checkbox").forEach((checkbox) => checkbox.addEventListener("change", () => {
     const resourceId = Number(checkbox.dataset.resourceId);
-    if (checkbox.checked) editorResourceLinks.set(resourceId, defaultResourceRole());
+    if (checkbox.checked) {
+      const resource = plan.resources.find((item) => item.id === resourceId);
+      const role = resourceRoles.includes(resource?.asset_role) ? resource.asset_role : defaultResourceRole();
+      if (role === "Output") for (const [otherId, otherRole] of editorResourceLinks.entries()) if (otherRole === "Output") editorResourceLinks.set(otherId, defaultResourceRole());
+      editorResourceLinks.set(resourceId, role);
+    }
     else editorResourceLinks.delete(resourceId);
     renderResourcePicker();
     lucide.createIcons();
@@ -381,7 +386,7 @@ function fillEditor(generation = null) {
   editorResourceLinks = new Map((generation?.resources || []).map((resource) => [resource.id, resource.role]));
   document.querySelector("#generationEditorTitle").textContent = generation ? `Edit ${generation.version_label}` : "Add generation";
   document.querySelector("#generationResourceSearch").value = "";
-  document.querySelector("#generationUploadStatus").textContent = "New uploads are added to the shot library and linked here.";
+  document.querySelector("#generationUploadStatus").textContent = "The uploaded file will be linked as this generation's Output.";
   renderResourcePicker();
   updateCostPreview();
 }
@@ -449,12 +454,13 @@ function validGenerationNumbers() {
   return true;
 }
 
-function uploadResource(file, category, notes, onProgress = () => {}, numbers = plan) {
+function uploadResource(file, category, notes, onProgress = () => {}, numbers = plan, assetRole = defaultResourceRole()) {
   return new Promise((resolve, reject) => {
     const payload = new FormData();
     payload.append("sequence_number", numbers.sequence_number);
     payload.append("shot_number", numbers.shot_number);
     payload.append("category", category);
+    payload.append("asset_role", assetRole);
     payload.append("notes", notes);
     payload.append("file", file, file.name);
     const request = new XMLHttpRequest();
@@ -479,17 +485,15 @@ generationUploadInput?.addEventListener("change", async () => {
   const oversized = files.find((file) => file.size > maxUploadBytes);
   if (oversized) return showToast(`${oversized.name} is larger than ${formatBytes(maxUploadBytes)}`);
   const status = document.querySelector("#generationUploadStatus");
-  const selectedRole = document.querySelector("#generationUploadRole").value;
   let uploaded = 0;
   for (const file of files) {
     try {
       const versionLabel = editorFields.version_number.value ? `v${editorFields.version_number.value}` : "a generation";
-      const resource = await uploadResource(file, selectedRole === "Output" ? "Generation" : "Reference", `Uploaded for ${versionLabel}`, (percentage) => { status.textContent = `Uploading ${file.name}: ${percentage}%`; });
+      const resource = await uploadResource(file, "Generation", `Uploaded for ${versionLabel}`, (percentage) => { status.textContent = `Uploading ${file.name}: ${percentage}%`; }, plan, "Output");
       resource.generation_usage_count = 0;
       plan.resources.unshift(resource);
-      const role = selectedRole === "Output" && uploaded > 0 ? defaultResourceRole() : selectedRole;
-      if (role === "Output") for (const [otherId, otherRole] of editorResourceLinks.entries()) if (otherRole === "Output") editorResourceLinks.set(otherId, defaultResourceRole());
-      editorResourceLinks.set(resource.id, role);
+      for (const [otherId, otherRole] of editorResourceLinks.entries()) if (otherRole === "Output") editorResourceLinks.set(otherId, defaultResourceRole());
+      editorResourceLinks.set(resource.id, "Output");
       uploaded += 1;
     } catch (error) {
       showToast(error.message);
@@ -504,6 +508,24 @@ const resourceUploadForm = document.querySelector("#resourceUploadForm");
 const resourceDropZone = document.querySelector("#resourceDropZone");
 const resourceFileInput = document.querySelector("#resourceFileInput");
 const resourceUploadQueue = document.querySelector("#resourceUploadQueue");
+
+document.querySelector("#assetBriefForm")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!permissions.canEditPlans) return;
+  const button = event.currentTarget.querySelector("button[type='submit']");
+  const description = document.querySelector("#assetBriefNotes").value.trim();
+  button.disabled = true;
+  const response = await fetch(`/api/plans/${plan.id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ description })
+  });
+  const payload = await response.json().catch(() => ({}));
+  button.disabled = false;
+  if (!response.ok) return showToast(payload.error || "Could not save the brief and notes");
+  plan.description = description;
+  showToast("Brief and notes saved");
+});
 
 function uploadQueueRow(file) {
   const row = document.createElement("div");
@@ -520,8 +542,7 @@ async function uploadShotLibraryFiles(fileList) {
   if (oversized) return showToast(`${oversized.name} is larger than ${formatBytes(maxUploadBytes)}`);
   resourceUploadQueue.replaceChildren();
   resourceUploadQueue.classList.remove("hidden");
-  const category = document.querySelector("#resourceCategory").value;
-  const notes = document.querySelector("#resourceNotes").value.trim();
+  const assetRole = document.querySelector("#assetResourceRole").value;
   let uploaded = 0;
   for (const file of files) {
     const row = uploadQueueRow(file);
@@ -529,7 +550,7 @@ async function uploadShotLibraryFiles(fileList) {
     const bar = row.querySelector("[data-upload-progress]");
     resourceUploadQueue.append(row);
     try {
-      await uploadResource(file, category, notes, (percentage) => { bar.style.width = `${percentage}%`; label.textContent = percentage === 100 ? "Processing…" : `${percentage}%`; });
+      await uploadResource(file, "Reference", "", (percentage) => { bar.style.width = `${percentage}%`; label.textContent = percentage === 100 ? "Processing…" : `${percentage}%`; }, plan, assetRole);
       bar.style.width = "100%";
       label.textContent = "Saved";
       label.classList.add("text-acid");
@@ -541,8 +562,8 @@ async function uploadShotLibraryFiles(fileList) {
     }
   }
   if (uploaded) {
-    showToast(`${uploaded} file${uploaded === 1 ? "" : "s"} added to the shot library`);
-    window.location.hash = "resources";
+    showToast(`${uploaded} asset${uploaded === 1 ? "" : "s"} added to this plan`);
+    window.location.hash = "assets";
     setTimeout(() => window.location.reload(), 650);
   } else showToast("No files were uploaded");
 }
@@ -556,7 +577,7 @@ for (const eventName of ["dragleave", "drop"]) resourceDropZone?.addEventListene
 resourceDropZone?.addEventListener("drop", (event) => uploadShotLibraryFiles(event.dataTransfer.files));
 
 document.querySelector("#resourceFilter")?.addEventListener("change", (event) => {
-  document.querySelectorAll("[data-resource-card]").forEach((card) => card.classList.toggle("hidden", event.target.value !== "all" && card.dataset.resourceCategory !== event.target.value));
+  document.querySelectorAll("[data-resource-card]").forEach((card) => card.classList.toggle("hidden", event.target.value !== "all" && card.dataset.resourceRole !== event.target.value));
 });
 document.querySelectorAll(".resource-delete-button").forEach((button) => button.addEventListener("click", async () => {
   if (!window.confirm(`Remove ${button.dataset.resourceName} from this shot? It will also be unlinked from every generation that uses it.`)) return;
@@ -567,8 +588,8 @@ document.querySelectorAll(".resource-delete-button").forEach((button) => button.
     button.disabled = false;
     return showToast(payload.error || "Could not remove this file");
   }
-  showToast("File removed from the shot library");
-  window.location.hash = "resources";
+  showToast("Asset removed from this plan");
+  window.location.hash = "assets";
   setTimeout(() => window.location.reload(), 450);
 }));
 
@@ -579,5 +600,5 @@ document.addEventListener("keydown", (event) => {
 });
 
 const initialTab = window.location.hash.slice(1);
-activateTab(["generations", "notes"].includes(initialTab) ? initialTab : "generations", { scroll: false });
+activateTab(["generations", "assets"].includes(initialTab) ? initialTab : "generations", { scroll: false });
 lucide.createIcons();
