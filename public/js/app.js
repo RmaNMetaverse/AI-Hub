@@ -8,7 +8,8 @@ const state = {
   workspaceRoles: window.__AI_HUB_WORKSPACE_ROLES__ || [],
   generationCatalogs: window.__AI_HUB_GENERATION_CATALOGS__ || { models: [], platforms: [], resource_roles: [] },
   query: "",
-  status: "all"
+  status: "all",
+  planCardSize: Number(window.localStorage.getItem("ai-hub-plan-card-size") || 0)
 };
 
 const els = {
@@ -18,11 +19,28 @@ const els = {
   stats: document.querySelector("#statsRow"),
   search: document.querySelector("#searchInput"),
   filter: document.querySelector("#statusFilter"),
+  cardSizeRange: document.querySelector("#planCardSizeRange"),
+  cardSizeLabel: document.querySelector("#planCardSizeLabel"),
   modal: document.querySelector("#newPlanModal"),
   modalCard: document.querySelector("#modalCard"),
   form: document.querySelector("#newPlanForm"),
   toast: document.querySelector("#toast")
 };
+
+const planCardSizes = [
+  { label: "Compact", minWidth: 210 },
+  { label: "Comfortable", minWidth: 270 },
+  { label: "Large", minWidth: 340 }
+];
+
+function applyPlanCardSize() {
+  const index = Math.min(Math.max(Number(state.planCardSize) || 0, 0), planCardSizes.length - 1);
+  const size = planCardSizes[index];
+  state.planCardSize = index;
+  els.grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${size.minWidth}px, 1fr))`;
+  if (els.cardSizeRange) els.cardSizeRange.value = String(index);
+  if (els.cardSizeLabel) els.cardSizeLabel.textContent = size.label;
+}
 
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, (character) => ({
@@ -112,6 +130,7 @@ function renderStats() {
 
 
 function render() {
+  applyPlanCardSize();
   const plans = filteredPlans();
   renderStats();
   els.grid.innerHTML = plans.map(shotCard).join("");
@@ -184,6 +203,11 @@ document.querySelector("#closeModalButton").addEventListener("click", closeModal
 document.querySelector("#cancelModalButton").addEventListener("click", closeModal);
 document.querySelector("#modalBackdrop").addEventListener("click", closeModal);
 document.querySelector("#mobileMenuButton").addEventListener("click", () => document.querySelector(".app-sidebar").classList.toggle("mobile-open"));
+els.cardSizeRange?.addEventListener("input", (event) => {
+  state.planCardSize = Number(event.target.value);
+  window.localStorage.setItem("ai-hub-plan-card-size", String(state.planCardSize));
+  applyPlanCardSize();
+});
 document.querySelector("#newPlanAssetInput")?.addEventListener("change", (event) => {
   const count = event.target.files.length;
   document.querySelector("#newPlanAssetStatus").textContent = count
@@ -462,6 +486,7 @@ function renderUsers() {
         <select class="user-role h-8 flex-1 rounded-lg border border-white/[0.08] bg-black/20 px-2 text-[11px] text-zinc-400 outline-none" aria-label="Role for ${escapeHtml(user.display_name)}">${state.workspaceRoles.map((role) => `<option ${role.name === user.role ? "selected" : ""}>${escapeHtml(role.name)}</option>`).join("")}</select>
         <button class="toggle-user h-8 rounded-lg border border-white/[0.08] px-3 text-[10px] font-semibold ${user.active ? "text-zinc-500 hover:text-red-300" : "text-acid"}">${user.active ? "Disable" : "Enable"}</button>
       </div>
+      ${state.currentUser?.role === "Admin" && state.currentUser.id !== user.id && user.active ? `<div class="mt-2"><button type="button" class="open-password-reset text-[10px] text-zinc-600 transition hover:text-acid">Reset forgotten password</button><form class="password-reset-form mt-3 hidden space-y-2 rounded-xl border border-amber-300/10 bg-amber-300/[0.025] p-3"><label><span class="field-label">New password</span><input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password" class="field h-9 py-0 text-xs" required /></label><label><span class="field-label">Confirm password</span><input name="confirmation" type="password" minlength="10" maxlength="128" autocomplete="new-password" class="field h-9 py-0 text-xs" required /></label><div class="flex items-center justify-end gap-2"><button type="button" class="cancel-password-reset text-[10px] text-zinc-600 hover:text-white">Cancel</button><button type="submit" class="ghost-button h-8 px-3 text-[10px]">Save password</button></div></form></div>` : ""}
     </article>`).join("");
 
   list.querySelectorAll(".user-role").forEach((select) => select.addEventListener("change", async () => {
@@ -472,6 +497,36 @@ function renderUsers() {
     const id = Number(button.closest("[data-user-id]").dataset.userId);
     const user = accountUsers.find((item) => item.id === id);
     await updateUserAccount(id, { active: !user.active });
+  }));
+  list.querySelectorAll(".open-password-reset").forEach((button) => button.addEventListener("click", () => {
+    button.closest("[data-user-id]").querySelector(".password-reset-form").classList.remove("hidden");
+    button.classList.add("hidden");
+    button.closest("[data-user-id]").querySelector("input[name='password']").focus();
+  }));
+  list.querySelectorAll(".cancel-password-reset").forEach((button) => button.addEventListener("click", () => {
+    const card = button.closest("[data-user-id]");
+    card.querySelector(".password-reset-form").classList.add("hidden");
+    card.querySelector(".open-password-reset").classList.remove("hidden");
+  }));
+  list.querySelectorAll(".password-reset-form").forEach((form) => form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const card = form.closest("[data-user-id]");
+    const user = accountUsers.find((item) => item.id === Number(card.dataset.userId));
+    const button = form.querySelector("button[type='submit']");
+    button.disabled = true;
+    const response = await fetch(`/api/users/${user.id}/password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.fromEntries(new FormData(form)))
+    });
+    const payload = await response.json().catch(() => ({}));
+    button.disabled = false;
+    if (!response.ok) return showToast(payload.error || "Could not reset the password");
+    form.reset();
+    form.classList.add("hidden");
+    card.querySelector(".open-password-reset").classList.remove("hidden");
+    showToast(`Password reset for @${user.username}; their active sessions were signed out`);
+    await loadUsers();
   }));
 }
 

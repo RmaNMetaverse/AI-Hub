@@ -102,6 +102,7 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.deepEqual(storedThumbnailBytes.slice(0, 8), new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]));
 
   let assetUserId;
+  let creatorUserId;
   for (const account of [
     { username: "docker.creator", display_name: "Docker Creator", role: "Creator" },
     { username: "docker.supervisor", display_name: "Docker Supervisor", role: "Supervisor" },
@@ -115,6 +116,7 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
     assert.equal(created.status, 201);
     const createdAccount = await created.json();
     if (createdAccount.username === "docker.assets") assetUserId = createdAccount.id;
+    if (createdAccount.username === "docker.creator") creatorUserId = createdAccount.id;
   }
 
   const creatorActivation = await request("/auth/activate", {
@@ -265,6 +267,7 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(home.status, 200);
   const homeHtml = await home.text();
   assert.match(homeHtml, /id="planGrid"/);
+  assert.match(homeHtml, /id="planCardSizeRange"/);
   assert.match(homeHtml, /id="sequenceFilter"/);
   assert.match(homeHtml, /id="shotFilter"/);
   assert.doesNotMatch(homeHtml, /id="boardView"/);
@@ -669,4 +672,28 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal((await request(`/api/users/${assetUserId}`, { method: "PATCH", cookie: adminCookie, body: { role: "Viewer" } })).status, 200);
   const customRoleDelete = await request(`/api/roles/${customRole.id}`, { method: "DELETE", cookie: adminCookie });
   assert.equal(customRoleDelete.status, 204);
+
+  const forbiddenPasswordReset = await request(`/api/users/${creatorUserId}/password`, {
+    method: "POST",
+    cookie: creatorCookie,
+    body: { password: "Reset-Creator-Password-1", confirmation: "Reset-Creator-Password-1" }
+  });
+  assert.equal(forbiddenPasswordReset.status, 403);
+  const passwordReset = await request(`/api/users/${creatorUserId}/password`, {
+    method: "POST",
+    cookie: adminCookie,
+    body: { password: "Reset-Creator-Password-1", confirmation: "Reset-Creator-Password-1" }
+  });
+  assert.equal(passwordReset.status, 200);
+  assert.equal((await passwordReset.json()).must_set_password, false);
+  const oldPasswordLogin = await request("/auth/login", {
+    method: "POST",
+    body: { username: "docker.creator", password: "Creator-Test-Password-1" }
+  });
+  assert.equal(oldPasswordLogin.status, 401);
+  const resetPasswordLogin = await request("/auth/login", {
+    method: "POST",
+    body: { username: "docker.creator", password: "Reset-Creator-Password-1" }
+  });
+  assert.equal(resetPasswordLogin.status, 200);
 });

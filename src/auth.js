@@ -6,6 +6,7 @@ import {
   getWorkspaceRole,
   getUserBySessionHash,
   markUserLogin,
+  resetUserPassword,
   saveSession,
   setUserPassword
 } from "./db.js";
@@ -109,6 +110,10 @@ export async function activateAccount(usernameValue, password) {
   const passwordHash = await hashPassword(password);
   const activated = setUserPassword(user.id, passwordHash);
   return publicUser(activated);
+}
+
+export async function resetAccountPassword(id, password) {
+  return publicUser(resetUserPassword(id, await hashPassword(password)));
 }
 
 export async function authenticateAccount(usernameValue, password) {

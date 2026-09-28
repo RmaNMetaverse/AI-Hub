@@ -64,6 +64,7 @@ import {
   identifyAccount,
   normalizeUsername,
   permissionsFor,
+  resetAccountPassword,
   validateUsername
 } from "./src/auth.js";
 import {
@@ -281,6 +282,11 @@ function requirePermission(permission) {
     if (request.permissions?.[permission]) return next();
     response.status(403).json({ error: "You do not have permission to perform this action" });
   };
+}
+
+function requireAdmin(request, response, next) {
+  if (request.user?.role === "Admin") return next();
+  response.status(403).json({ error: "Only an Admin can reset account passwords" });
 }
 
 router.get("/health", (_request, response) => {
@@ -1017,6 +1023,19 @@ router.patch("/api/users/:id", requirePermission("canManageAccounts"), (request,
     recordActivity(request.user, "updated_user", "user", user.id, `Updated account for ${user.display_name} · ${user.role}`, {
       details: { active: user.active, role: user.role }
     });
+    response.json(user);
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+router.post("/api/users/:id/password", requireAdmin, async (request, response) => {
+  try {
+    const password = String(request.body.password || "");
+    const confirmation = String(request.body.confirmation || "");
+    if (password !== confirmation) throw new Error("Passwords do not match");
+    const user = await resetAccountPassword(Number(request.params.id), password);
+    recordActivity(request.user, "reset_user_password", "user", user.id, `Reset password for ${user.display_name}`);
     response.json(user);
   } catch (error) {
     response.status(400).json({ error: error.message });

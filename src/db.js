@@ -1527,6 +1527,20 @@ export function setUserPassword(id, passwordHash) {
   return hydrateUser(db.prepare("SELECT * FROM users WHERE id = ?").get(id));
 }
 
+export function resetUserPassword(id, passwordHash) {
+  const current = db.prepare("SELECT * FROM users WHERE id = ?").get(id);
+  if (!current || !current.active) throw new Error("Active account not found");
+  db.transaction(() => {
+    db.prepare(`
+      UPDATE users
+      SET password_hash = ?, must_set_password = 0, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(passwordHash, id);
+    db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
+  })();
+  return hydrateUser(db.prepare("SELECT * FROM users WHERE id = ?").get(id));
+}
+
 export function markUserLogin(id) {
   db.prepare("UPDATE users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(id);
 }
