@@ -16,7 +16,6 @@
     <% const formatBytes = bytes => { const value = Number(bytes || 0); if (!value) return '0 B'; const units = ['B','KB','MB','GB','TB']; const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1); return `${(value / (1024 ** index)).toFixed(index ? 1 : 0)} ${units[index]}`; }; %>
     <% const formatCost = value => Number(value || 0) > 0 ? `$${Number(value).toFixed(Number(value) < 0.01 ? 4 : 2)}` : 'Not tracked'; %>
     <% const resourceIcons = { image: 'image', video: 'file-video-2', audio: 'audio-lines', document: 'file-text', archive: 'archive', other: 'file-box' }; %>
-    <% const totalGenerationCost = plan.generations.reduce((total, generation) => total + Number(generation.generation_cost || 0), 0); %>
 
     <div class="min-h-screen bg-[radial-gradient(circle_at_55%_-20%,rgba(214,255,69,0.055),transparent_35%)]">
       <header class="sticky top-0 z-40 flex h-[68px] items-center border-b border-white/[0.07] bg-[#08090a]/85 px-4 backdrop-blur-xl sm:px-6 xl:px-8">
@@ -80,12 +79,6 @@
               <div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                 <div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Version history</div><h2 class="mt-2 text-2xl font-semibold tracking-tight">Generation timeline</h2><p class="mt-2 max-w-2xl text-sm text-zinc-500">Every result keeps its exact prompt, model, cost, output, and reusable input lineage.</p></div>
                 <% if (permissions.canEditPlans) { %><button id="addGenerationButton" class="primary-button h-11 px-5"><i data-lucide="plus" class="h-4 w-4"></i>Add generation</button><% } %>
-              </div>
-
-              <div class="mt-5 grid gap-3 sm:grid-cols-3">
-                <div class="rounded-2xl border border-white/[0.07] bg-[#101113] p-4"><div class="text-[9px] uppercase tracking-[0.13em] text-zinc-700">Logged versions</div><div class="mt-2 text-2xl font-semibold"><%= plan.generation_count %></div></div>
-                <div class="rounded-2xl border border-white/[0.07] bg-[#101113] p-4"><div class="text-[9px] uppercase tracking-[0.13em] text-zinc-700">Tracked generation cost</div><div class="mt-2 text-2xl font-semibold"><%= formatCost(totalGenerationCost) %></div></div>
-                <div class="rounded-2xl border border-white/[0.07] bg-[#101113] p-4"><div class="text-[9px] uppercase tracking-[0.13em] text-zinc-700">Reusable files</div><div class="mt-2 text-2xl font-semibold"><%= plan.resource_count %></div></div>
               </div>
 
               <div class="mt-5 grid gap-4 md:grid-cols-2">
