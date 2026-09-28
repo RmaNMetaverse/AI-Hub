@@ -58,7 +58,7 @@ function activateTab(name, { scroll = true } = {}) {
   window.history.replaceState(null, "", `#${name}`);
   if (scroll) {
     const tab = document.querySelector(".shot-tab");
-    const navigationHeight = document.querySelector("#shotNavigationForm").getBoundingClientRect().height;
+    const navigationHeight = document.querySelector("#shotNavigationForm")?.getBoundingClientRect().height || 0;
     window.scrollTo({ top: tab.getBoundingClientRect().top + window.scrollY - navigationHeight - 80, behavior: "smooth" });
   }
   lucide.createIcons();
