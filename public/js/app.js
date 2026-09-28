@@ -17,7 +17,6 @@ const els = {
   grid: document.querySelector("#planGrid"),
   count: document.querySelector("#shotResultCount"),
   empty: document.querySelector("#emptyState"),
-  stats: document.querySelector("#statsRow"),
   search: document.querySelector("#searchInput"),
   filter: document.querySelector("#statusFilter"),
   assignmentFilter: document.querySelector("#assignmentFilter"),
@@ -117,30 +116,9 @@ function shotCard(plan) {
     </article>`;
 }
 
-function renderStats() {
-  const total = state.plans.length;
-  const wip = state.plans.filter((plan) => plan.status === "WIP").length;
-  const approved = state.plans.filter((plan) => plan.status === "Approved").length;
-  const generations = state.plans.reduce((sum, plan) => sum + Number(plan.generation_count || 0), 0);
-  const stats = [
-    ["Total shots", total, "In this workspace", "clapperboard"],
-    ["WIP", wip, "In progress shots", "clock"],
-    ["Approved", approved, `${Math.round((approved / Math.max(total, 1)) * 100)}% of production`, "circle-check"],
-    ["Generations", generations, `${generations} logged across shots`, "layers-3"]
-  ];
-  els.stats.innerHTML = stats.map(([label, value, note, icon]) => `
-    <div class="bg-[#0f1012] p-4 sm:p-5">
-      <div class="flex items-center justify-between text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600"><span>${label}</span><i data-lucide="${icon}" class="h-4 w-4"></i></div>
-      <div class="mt-3 text-2xl font-semibold tracking-tight text-zinc-100">${value}</div>
-      <div class="mt-1 text-[11px] text-zinc-600">${note}</div>
-    </div>`).join("");
-}
-
-
 function render() {
   applyPlanCardSize();
   const plans = filteredPlans();
-  renderStats();
   els.grid.innerHTML = plans.map(shotCard).join("");
   els.count.textContent = `${plans.length} of ${state.plans.length} shots`;
   els.empty.classList.toggle("hidden", plans.length > 0);

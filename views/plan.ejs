@@ -31,7 +31,6 @@
             <span class="px-2 text-[9px] font-semibold uppercase tracking-[0.12em] text-zinc-600">Shots</span>
             <a id="nextShot" href="<%= nextPlan ? basePath + '/plans/' + nextPlan.id : '#' %><%= nextPlan && filterQuery ? '?' + filterQuery : '' %>" class="icon-button h-8 w-8 border-0 bg-transparent <%= nextPlan ? '' : 'hidden' %>" title="<%= nextPlan ? 'Next: ' + nextPlan.title : 'Next shot' %>" aria-label="Next shot"><i data-lucide="chevron-right" class="h-4 w-4"></i></a>
           </div>
-          <button id="copyShotLink" class="icon-button" aria-label="Copy shot link"><i data-lucide="link" class="h-4 w-4"></i></button>
           <div class="relative">
             <button id="shotAccountButton" class="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-amber-200 to-orange-700 text-xs font-bold text-black" aria-label="Open account menu"><%= userInitials %></button>
             <div id="shotAccountMenu" class="absolute right-0 top-12 hidden w-60 overflow-hidden rounded-2xl border border-white/10 bg-[#151619] p-2 shadow-float">

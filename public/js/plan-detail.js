@@ -93,10 +93,6 @@ document.querySelector("#copyPromptButton")?.addEventListener("click", async () 
   await navigator.clipboard.writeText(plan.prompt || "");
   showToast("Prompt copied");
 });
-document.querySelector("#copyShotLink")?.addEventListener("click", async () => {
-  await navigator.clipboard.writeText(window.location.href.split("#")[0]);
-  showToast("Shot link copied");
-});
 
 const accountButton = document.querySelector("#shotAccountButton");
 const accountMenu = document.querySelector("#shotAccountMenu");
