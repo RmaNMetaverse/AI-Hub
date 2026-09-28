@@ -9,6 +9,7 @@ const state = {
   generationCatalogs: window.__AI_HUB_GENERATION_CATALOGS__ || { models: [], platforms: [], resource_roles: [] },
   query: "",
   status: "all",
+  assignment: "all",
   planCardSize: Number(window.localStorage.getItem("ai-hub-plan-card-size") || 0)
 };
 
@@ -19,6 +20,7 @@ const els = {
   stats: document.querySelector("#statsRow"),
   search: document.querySelector("#searchInput"),
   filter: document.querySelector("#statusFilter"),
+  assignmentFilter: document.querySelector("#assignmentFilter"),
   cardSizeRange: document.querySelector("#planCardSizeRange"),
   cardSizeLabel: document.querySelector("#planCardSizeLabel"),
   modal: document.querySelector("#newPlanModal"),
@@ -61,8 +63,12 @@ function filteredPlans() {
   const query = state.query.toLowerCase().trim();
   return state.plans.filter((plan) => {
     const matchesStatus = state.status === "all" || plan.status === state.status;
+    const matchesAssignment = state.assignment === "all"
+      || (state.assignment === "mine" && (plan.assignees || []).some((user) => user.id === state.currentUser?.id))
+      || (state.assignment === "unassigned" && !(plan.assignees || []).length)
+      || (state.assignment.startsWith("user:") && (plan.assignees || []).some((user) => user.id === Number(state.assignment.slice(5))));
     const haystack = [plan.title, plan.shot_code, plan.model, plan.owner, ...(plan.tags || [])].join(" ").toLowerCase();
-    return window.shotNavigation.matches(plan) && matchesStatus && (!query || haystack.includes(query));
+    return window.shotNavigation.matches(plan) && matchesStatus && matchesAssignment && (!query || haystack.includes(query));
   }).sort((a, b) => b.sort_at.localeCompare(a.sort_at) || b.id - a.id);
 }
 
@@ -102,9 +108,11 @@ function shotCard(plan) {
         <p class="mt-1 line-clamp-2 min-h-9 text-xs leading-[18px] text-zinc-500">${escapeHtml(plan.description)}</p>
         <div class="mt-4 flex items-center justify-between gap-2 border-t border-white/[0.07] pt-3 text-xs text-zinc-500"><span class="truncate">${escapeHtml(plan.model)}</span><span class="shrink-0">${plan.generation_count} generations</span></div>
         <div class="mt-2 text-[11px] text-zinc-600">${plan.generated_at ? "Generated" : "Created"} ${escapeHtml(generationDate(plan.sort_at))}</div>
+        <div class="mt-2 truncate text-[10px] text-zinc-500" title="${escapeHtml((plan.assignees || []).map((user) => user.display_name).join(", "))}">Assigned: ${escapeHtml((plan.assignees || []).map((user) => user.display_name).join(", ") || "No one")}</div>
       </div>
       </a>
       ${state.permissions.canEditPlans ? `<button class="cover-plan-card icon-button absolute right-3 top-3 z-10 bg-black/70 text-zinc-300 hover:text-acid" aria-label="Change cover for ${escapeHtml(plan.title)}" title="Change cover art"><i data-lucide="image-plus" class="h-3.5 w-3.5"></i></button>` : ""}
+      ${state.permissions.canAssignPlans ? `<button class="assign-plan-card icon-button absolute right-12 top-3 z-10 bg-black/70 text-zinc-300 hover:text-acid" aria-label="Assign ${escapeHtml(plan.title)}" title="Manage assignments"><i data-lucide="users" class="h-3.5 w-3.5"></i></button>` : ""}
       ${state.permissions.canDeletePlans ? `<button class="delete-plan-card icon-button absolute right-3 top-12 z-10 border-red-300/10 bg-black/70 text-red-300/70 hover:text-red-200" aria-label="Delete ${escapeHtml(plan.title)}" title="Delete shot"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ""}
     </article>`;
 }
@@ -157,6 +165,12 @@ function render() {
     const id = Number(button.closest("[data-plan-id]").dataset.planId);
     openCoverEditor(id);
   }));
+  els.grid.querySelectorAll(".assign-plan-card").forEach((button) => button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const plan = state.plans.find((item) => item.id === Number(button.closest("[data-plan-id]").dataset.planId));
+    if (plan) window.openPlanAssignment?.(plan);
+  }));
   els.grid.querySelectorAll("[data-plan-cover-video]").forEach((video) => {
     video.addEventListener("loadedmetadata", () => {
       if (Number.isFinite(video.duration) && video.duration > 0) video.currentTime = Math.min(0.08, video.duration / 10);
@@ -198,6 +212,23 @@ document.addEventListener("shotfilterschange", render);
 document.querySelectorAll("[data-planned-feature]").forEach((button) => button.addEventListener("click", () => showToast(`${button.dataset.plannedFeature} is planned for a future update`)));
 els.search.addEventListener("input", (event) => { state.query = event.target.value; render(); });
 els.filter.addEventListener("change", (event) => { state.status = event.target.value; render(); });
+if (els.assignmentFilter) {
+  els.assignmentFilter.add(new Option("Unassigned", "unassigned"));
+  if (state.permissions.canAssignPlans) {
+    const assignedUsers = new Map(state.plans.flatMap((plan) => plan.assignees || []).map((user) => [user.id, user.display_name]));
+    [...assignedUsers.entries()].sort((a, b) => a[1].localeCompare(b[1])).forEach(([id, name]) => els.assignmentFilter.add(new Option(name, `user:${id}`)));
+  }
+}
+els.assignmentFilter?.addEventListener("change", (event) => { state.assignment = event.target.value; render(); });
+document.addEventListener("planassignmentchange", (event) => {
+  state.plans = state.plans.map((plan) => plan.id === event.detail.id ? { ...plan, assignees: event.detail.assignees } : plan);
+  if (els.assignmentFilter && state.permissions.canAssignPlans) {
+    event.detail.assignees.forEach((user) => {
+      if (![...els.assignmentFilter.options].some((option) => option.value === `user:${user.id}`)) els.assignmentFilter.add(new Option(user.display_name, `user:${user.id}`));
+    });
+  }
+  render();
+});
 document.querySelector("#newPlanButton")?.addEventListener("click", openModal);
 document.querySelector("#closeModalButton").addEventListener("click", closeModal);
 document.querySelector("#cancelModalButton").addEventListener("click", closeModal);

@@ -281,6 +281,25 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS plan_assignments (
+    plan_id INTEGER NOT NULL REFERENCES ai_plans(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    assigned_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    assigned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (plan_id, user_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    message TEXT NOT NULL,
+    plan_id INTEGER REFERENCES ai_plans(id) ON DELETE SET NULL,
+    actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    read_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+
   CREATE INDEX IF NOT EXISTS plan_approvals_plan_idx ON plan_approvals(plan_id, approved_at DESC);
   CREATE INDEX IF NOT EXISTS plan_covers_plan_idx ON plan_covers(plan_id);
   CREATE INDEX IF NOT EXISTS prompt_library_updated_idx ON prompt_library(updated_at DESC);
@@ -290,6 +309,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS activity_log_created_idx ON activity_log(created_at DESC, id DESC);
   CREATE INDEX IF NOT EXISTS activity_log_user_idx ON activity_log(user_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS activity_log_plan_idx ON activity_log(plan_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS plan_assignments_user_idx ON plan_assignments(user_id, plan_id);
+  CREATE INDEX IF NOT EXISTS notifications_user_idx ON notifications(user_id, read_at, id DESC);
 `);
 
 function ensureColumn(table, column, definition) {
@@ -733,7 +754,7 @@ export function getDashboard(input = {}) {
     LEFT JOIN plan_covers pc ON pc.id = c.custom_cover_id
     LEFT JOIN resources r ON r.id = c.automatic_cover_id
     ORDER BY sort_at DESC, c.id DESC
-  `).all({ project_id: project.id, ...filters }).map(normalizePlan);
+  `).all({ project_id: project.id, ...filters }).map((plan) => ({ ...normalizePlan(plan), assignees: listPlanAssignees(plan.id) }));
   return { project, plans };
 }
 
@@ -766,11 +787,75 @@ export function getPlan(id) {
     selected_generation: selectedGeneration,
     approval,
     generation_count: generations.length,
+    assignees: listPlanAssignees(id),
     resources,
     assets,
     resource_count: assets.length,
     resource_bytes: assets.reduce((total, resource) => total + resource.size_bytes, 0)
   };
+}
+
+export function listAssignableUsers() {
+  return db.prepare(`SELECT u.id, u.username, u.display_name, COALESCE(wr.name, u.role) AS role
+    FROM users u LEFT JOIN workspace_roles wr ON wr.id = u.role_id
+    WHERE u.active = 1 ORDER BY u.display_name COLLATE NOCASE, u.id`).all();
+}
+
+export function listPlanAssignees(planId) {
+  return db.prepare(`SELECT u.id, u.username, u.display_name, COALESCE(wr.name, u.role) AS role
+    FROM plan_assignments pa JOIN users u ON u.id = pa.user_id
+    LEFT JOIN workspace_roles wr ON wr.id = u.role_id
+    WHERE pa.plan_id = ? ORDER BY u.display_name COLLATE NOCASE`).all(planId);
+}
+
+export function setPlanAssignees(planId, userIds, actorId) {
+  if (!Array.isArray(userIds)) throw new Error("Send an array of user IDs");
+  const ids = [...new Set(userIds.map(Number))];
+  if (ids.some((id) => !Number.isSafeInteger(id) || id < 1)) throw new Error("Invalid user ID");
+  const assign = db.transaction(() => {
+    const plan = db.prepare("SELECT id, shot_code, title FROM ai_plans WHERE id = ?").get(planId);
+    if (!plan) throw new Error("Plan not found");
+    const active = new Set(listAssignableUsers().map((user) => user.id));
+    if (ids.some((id) => !active.has(id))) throw new Error("Select active users only");
+    const previous = new Set(db.prepare("SELECT user_id FROM plan_assignments WHERE plan_id = ?").all(planId).map((row) => row.user_id));
+    const next = new Set(ids);
+    const remove = db.prepare("DELETE FROM plan_assignments WHERE plan_id = ? AND user_id = ?");
+    const insert = db.prepare("INSERT INTO plan_assignments (plan_id, user_id, assigned_by) VALUES (?, ?, ?)");
+    previous.forEach((id) => { if (!next.has(id)) remove.run(planId, id); });
+    ids.forEach((id) => {
+      if (previous.has(id)) return;
+      insert.run(planId, id, actorId);
+      createNotification(id, "plan_assigned", `You were assigned to ${plan.shot_code} · ${plan.title}`, planId, actorId);
+    });
+    return listPlanAssignees(planId);
+  });
+  return assign();
+}
+
+export function createNotification(userId, kind, message, planId = null, actorId = null) {
+  db.prepare("INSERT INTO notifications (user_id, kind, message, plan_id, actor_id) VALUES (?, ?, ?, ?, ?)")
+    .run(userId, kind, String(message).slice(0, 500), planId, actorId);
+}
+
+export function notifySupervisors(kind, message, planId = null, actorId = null) {
+  const supervisors = db.prepare(`SELECT u.id FROM users u LEFT JOIN workspace_roles wr ON wr.id = u.role_id
+    WHERE u.active = 1 AND COALESCE(wr.name, u.role) = 'Supervisor'`).all();
+  supervisors.forEach((user) => createNotification(user.id, kind, message, planId, actorId));
+}
+
+export function listNotifications(userId, limit = 50) {
+  const notifications = db.prepare(`SELECT id, kind, message, plan_id, read_at, created_at
+    FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT ?`).all(userId, limit);
+  const unreadCount = db.prepare("SELECT COUNT(*) AS count FROM notifications WHERE user_id = ? AND read_at IS NULL").get(userId).count;
+  return { notifications, unread_count: unreadCount };
+}
+
+export function markNotificationRead(id, userId) {
+  return db.prepare("UPDATE notifications SET read_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND read_at IS NULL").run(id, userId).changes;
+}
+
+export function markAllNotificationsRead(userId) {
+  db.prepare("UPDATE notifications SET read_at = CURRENT_TIMESTAMP WHERE user_id = ? AND read_at IS NULL").run(userId);
 }
 
 export function listResources(planId) {

@@ -42,6 +42,7 @@ export function permissionsFor(role) {
     canReviewPlans,
     canApprovePlans,
     canSetCurrentFinal,
+    canAssignPlans: ["Admin", "Supervisor"].includes(role),
     canManageLibraries: Boolean(definition?.can_manage_libraries),
     allowedStatuses
   };

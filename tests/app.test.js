@@ -250,6 +250,34 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(plan.shot_number, 7);
   assert.equal(plan.shot_code, "SQ99-SH007");
   assert.equal(Object.hasOwn(plan, "due_date"), false);
+  assert.deepEqual(plan.assignees, []);
+  assert.equal((await request(`/api/plans/${plan.id}/assignees`, { method: "PUT", cookie: creatorCookie, body: { user_ids: [creatorUserId] } })).status, 403);
+  const availableAssignees = await request("/api/assignment-users", { cookie: adminCookie });
+  assert.equal(availableAssignees.status, 200);
+  assert.ok((await availableAssignees.json()).some((user) => user.id === creatorUserId));
+  const assignment = await request(`/api/plans/${plan.id}/assignees`, { method: "PUT", cookie: adminCookie,
+    body: { user_ids: [creatorUserId, assetUserId] } });
+  assert.equal(assignment.status, 200);
+  assert.deepEqual((await assignment.json()).assignees.map((user) => user.id).sort(), [creatorUserId, assetUserId].sort());
+  assert.equal((await request(`/api/plans/${plan.id}/assignees`, { method: "PUT", cookie: adminCookie,
+    body: { user_ids: [999999] } })).status, 400);
+  assert.equal((await request(`/api/plans/${plan.id}/assignees`, { method: "PUT", cookie: adminCookie,
+    body: { user_ids: [creatorUserId, assetUserId] } })).status, 200);
+  const creatorNotificationsResponse = await request("/api/notifications", { cookie: creatorCookie });
+  assert.equal(creatorNotificationsResponse.status, 200);
+  const creatorNotifications = await creatorNotificationsResponse.json();
+  const assignmentNotice = creatorNotifications.notifications.find((item) => item.kind === "plan_assigned" && item.plan_id === plan.id);
+  assert.ok(assignmentNotice);
+  assert.equal(creatorNotifications.notifications.filter((item) => item.kind === "plan_assigned" && item.plan_id === plan.id).length, 1);
+  assert.equal((await request(`/api/notifications/${assignmentNotice.id}/read`, { method: "PATCH", cookie: assetCookie })).status, 200);
+  const stillUnread = await (await request("/api/notifications", { cookie: creatorCookie })).json();
+  assert.ok(stillUnread.notifications.find((item) => item.id === assignmentNotice.id && !item.read_at));
+  await request(`/api/notifications/${assignmentNotice.id}/read`, { method: "PATCH", cookie: creatorCookie });
+  const readNotice = await (await request("/api/notifications", { cookie: creatorCookie })).json();
+  assert.ok(readNotice.notifications.find((item) => item.id === assignmentNotice.id && item.read_at));
+  const allRead = await request("/api/notifications/read-all", { method: "PATCH", cookie: creatorCookie });
+  assert.equal(allRead.status, 200);
+  assert.equal((await allRead.json()).unread_count, 0);
 
   for (const numbers of [
     {}, { sequence_number: 99 }, { shot_number: 7 },
@@ -283,6 +311,7 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   const homeHtml = await home.text();
   assert.match(homeHtml, /id="planGrid"/);
   assert.match(homeHtml, /id="planCardSizeRange"/);
+  assert.match(homeHtml, /id="assignmentFilter"/);
   assert.match(homeHtml, /id="sequenceFilter"/);
   assert.match(homeHtml, /id="shotFilter"/);
   assert.doesNotMatch(homeHtml, /id="boardView"/);
@@ -555,6 +584,13 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   });
   assert.equal(supervisorActivation.status, 200);
   const supervisorCookie = sessionCookie(supervisorActivation);
+  const supervisorNotifications = await (await request("/api/notifications", { cookie: supervisorCookie })).json();
+  assert.ok(supervisorNotifications.notifications.some((item) => item.kind === "created_plan" && item.plan_id === plan.id));
+  assert.ok(supervisorNotifications.notifications.some((item) => item.kind === "created_generation" && item.plan_id === plan.id));
+  const supervisorAssignment = await request(`/api/plans/${plan.id}/assignees`, { method: "PUT", cookie: supervisorCookie,
+    body: { user_ids: [creatorUserId] } });
+  assert.equal(supervisorAssignment.status, 200);
+  assert.deepEqual((await supervisorAssignment.json()).assignees.map((user) => user.id), [creatorUserId]);
 
   const prematureDelivery = await request(`/api/plans/${plan.id}/status`, { method: "PATCH", cookie: supervisorCookie, body: { status: "Delivered" } });
   assert.equal(prematureDelivery.status, 400);

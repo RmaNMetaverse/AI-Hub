@@ -40,12 +40,18 @@ import {
   listLibraryAssetTags,
   saveLibraryAssetTag,
   listAccounts,
+  listAssignableUsers,
+  listNotifications,
   listPrompts,
   listResources,
   listWorkspaceRoles,
   logActivity,
+  markAllNotificationsRead,
+  markNotificationRead,
+  notifySupervisors,
   replacePlanCover,
   selectGeneration,
+  setPlanAssignees,
   updatePlan,
   updatePlanStatus,
   updateAccount,
@@ -176,6 +182,13 @@ function recordActivity(user, action, entityType, entityId, summary, { planId = 
     summary,
     details
   });
+  const importantActions = new Set([
+    "created_plan", "created_generation", "created_and_approved_generation", "updated_generation",
+    "approved_generation", "approved_plan", "changed_plan_status", "updated_plan", "deleted_generation", "deleted_plan",
+    "selected_final_generation", "uploaded_asset", "updated_asset", "deleted_asset", "updated_plan_cover", "removed_plan_cover",
+    "created_prompt", "updated_prompt", "deleted_prompt", "uploaded_library_asset", "updated_library_asset", "deleted_library_asset"
+  ]);
+  if (importantActions.has(action)) notifySupervisors(action, summary, planId, user.id);
 }
 
 app.set("view engine", "ejs");
@@ -436,6 +449,33 @@ router.get("/plans/:id", (request, response) => {
 router.get("/api/plans", (request, response) => {
   try { response.json(getDashboard(request.query).plans.map(planCardForClient)); }
   catch (error) { response.status(400).json({ error: error.message }); }
+});
+
+router.get("/api/assignment-users", requirePermission("canAssignPlans"), (_request, response) => {
+  response.json(listAssignableUsers());
+});
+
+router.put("/api/plans/:id/assignees", requirePermission("canAssignPlans"), (request, response) => {
+  try {
+    setPlanAssignees(Number(request.params.id), request.body.user_ids, request.user.id);
+    const plan = getPlan(Number(request.params.id));
+    recordActivity(request.user, "assigned_plan", "plan", plan.id,
+      `Updated assignments for ${plan.shot_code} · ${plan.title}`, { planId: plan.id,
+        details: { user_ids: plan.assignees.map((user) => user.id) } });
+    response.json(planForClient(plan));
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+router.get("/api/notifications", (request, response) => response.json(listNotifications(request.user.id)));
+router.patch("/api/notifications/read-all", (request, response) => {
+  markAllNotificationsRead(request.user.id);
+  response.json(listNotifications(request.user.id));
+});
+router.patch("/api/notifications/:id/read", (request, response) => {
+  markNotificationRead(Number(request.params.id), request.user.id);
+  response.json(listNotifications(request.user.id));
 });
 
 router.get("/api/plans/:id", (request, response) => {

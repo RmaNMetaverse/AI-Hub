@@ -46,7 +46,7 @@
             <input id="searchInput" class="h-10 w-full rounded-full border border-transparent bg-white/[0.045] pl-10 pr-4 text-sm outline-none transition placeholder:text-zinc-600 focus:border-white/10 focus:bg-white/[0.065]" placeholder="Search plans, shots, models..." aria-label="Search plans" />
           </div>
           <div class="ml-auto flex items-center gap-2 pl-3">
-            <button type="button" class="icon-button hidden sm:grid" aria-label="Notifications" data-planned-feature="Notifications" title="Planned feature"><i data-lucide="bell" class="h-4 w-4"></i></button>
+            <button id="notificationButton" type="button" class="icon-button relative" aria-label="Notifications"><i data-lucide="bell" class="h-4 w-4"></i><span id="notificationBadge" class="absolute -right-1 -top-1 hidden min-w-4 rounded-full bg-acid px-1 text-[9px] font-bold text-black"></span></button>
             <% if (permissions.canCreatePlans) { %>
             <button id="newPlanButton" class="primary-button"><i data-lucide="plus" class="h-4 w-4"></i><span class="hidden sm:inline">New plan</span></button>
             <% } %>
@@ -78,6 +78,7 @@
                 <option value="WIP">WIP</option>
                 <option value="Approved">Approved</option>
               </select>
+              <select id="assignmentFilter" class="h-10 rounded-full border border-white/10 bg-[#0d0f12] pl-4 pr-9 text-xs font-medium text-zinc-300 outline-none transition hover:border-acid/40 focus:border-acid focus:text-acid focus:ring-2 focus:ring-acid/15" aria-label="Filter by assignment"><option value="all">All assignments</option><option value="mine">Assigned to me</option></select>
             </div>
           </div>
 
@@ -89,7 +90,7 @@
           <div id="emptyState" class="mt-16 hidden rounded-3xl border border-dashed border-white/10 py-16 text-center">
             <i data-lucide="search-x" class="mx-auto h-8 w-8 text-zinc-700"></i>
             <div class="mt-4 text-sm font-semibold">No plans found</div>
-            <div class="mt-1 text-xs text-zinc-600">Change #Seq or #Shot, or clear the search and status filters.</div>
+            <div class="mt-1 text-xs text-zinc-600">Change #Seq or #Shot, or clear the search, status, and assignment filters.</div>
           </div>
         </div>
       </main>
