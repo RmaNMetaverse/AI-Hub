@@ -191,7 +191,7 @@ function openGenerationDetail(id) {
   const selectButton = document.querySelector("#selectGenerationButton");
   const editButton = document.querySelector("#editGenerationButton");
   const approveGenButton = document.querySelector("#approveGenerationButton");
-  selectButton.classList.toggle("hidden", !permissions.canEditPlans || generation.id === plan.selected_generation_id);
+  selectButton?.classList.toggle("hidden", !permissions.canSetCurrentFinal || generation.id === plan.selected_generation_id);
   editButton.classList.toggle("hidden", !permissions.canEditPlans);
   if (approveGenButton) {
     approveGenButton.classList.toggle("hidden", !permissions.canApprovePlans);

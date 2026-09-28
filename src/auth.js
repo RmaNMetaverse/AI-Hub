@@ -29,6 +29,7 @@ export function permissionsFor(role) {
   const canManageWorkflow = Boolean(definition?.can_manage_workflow);
   const canReviewPlans = Boolean(definition?.can_review_plans);
   const canApprovePlans = role === "Supervisor";
+  const canSetCurrentFinal = ["Admin", "Supervisor"].includes(role);
   const allowedStatuses = canApprovePlans
     ? ["WIP", "Approved"]
     : canManageWorkflow ? ["WIP"] : [];
@@ -40,6 +41,7 @@ export function permissionsFor(role) {
     canManageWorkflow,
     canReviewPlans,
     canApprovePlans,
+    canSetCurrentFinal,
     canManageLibraries: Boolean(definition?.can_manage_libraries),
     allowedStatuses
   };

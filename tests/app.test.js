@@ -492,8 +492,14 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
     cookie: creatorCookie,
     body: { generation_id: firstGeneration.id }
   });
-  assert.equal(selectGenerationResponse.status, 200);
-  const selectedPlan = await selectGenerationResponse.json();
+  assert.equal(selectGenerationResponse.status, 403);
+  const adminSelectionResponse = await request(`/api/plans/${plan.id}/selected-generation`, {
+    method: "PATCH",
+    cookie: adminCookie,
+    body: { generation_id: firstGeneration.id }
+  });
+  assert.equal(adminSelectionResponse.status, 200);
+  const selectedPlan = await adminSelectionResponse.json();
   assert.equal(selectedPlan.selected_generation_id, firstGeneration.id);
   assert.equal(selectedPlan.selected_generation.id, firstGeneration.id);
   assert.equal(selectedPlan.resources.find((item) => item.id === resource.id).generation_usage_count, 2);
@@ -597,7 +603,8 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.match(html, /Approved by Docker Supervisor/);
   assert.match(html, /reference-frame\.png/);
   assert.match(html, /\/js\/plan-detail\.js/);
-  assert.match(html, /id="sequenceFilter"/);
+  assert.doesNotMatch(html, /id="shotNavigationForm"/);
+  assert.match(html, /Back to Production/);
   assert.match(html, /id="generationSequenceNumberInput"/);
   assert.match(html, /id="generationShotNumberInput"/);
   assert.doesNotMatch(html, /id="generationUploadRole"/);
@@ -622,7 +629,7 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.match(activityHtml, /Uploaded generation-output\.png/);
   const filteredShotPage = await request(`/plans/${plan.id}?sequence_number=99&shot_number=7`, { cookie: supervisorCookie });
   assert.equal(filteredShotPage.status, 200);
-  assert.match(await filteredShotPage.text(), /value="99"/);
+  assert.match(await filteredShotPage.text(), /Back to Production/);
 
   // Sort by generation creation time, never by workflow or upload edits.
   const auditDb = new Database(process.env.DB_PATH);

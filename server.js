@@ -602,7 +602,7 @@ router.delete("/api/plans/:id", requirePermission("canDeletePlans"), async (requ
   }
 });
 
-router.patch("/api/plans/:id/selected-generation", requirePermission("canEditPlans"), (request, response) => {
+router.patch("/api/plans/:id/selected-generation", requirePermission("canSetCurrentFinal"), (request, response) => {
   try {
     const plan = selectGeneration(Number(request.params.id), Number(request.body.generation_id));
     recordActivity(request.user, "selected_final_generation", "plan", plan.id,
