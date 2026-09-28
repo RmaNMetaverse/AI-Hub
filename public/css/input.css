@@ -165,6 +165,17 @@
     @apply mb-2 block text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500;
   }
 
+  .number-filter {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+
+  .number-filter::-webkit-outer-spin-button,
+  .number-filter::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
   .detail-section {
     @apply border-t border-white/[0.08] py-6;
   }
