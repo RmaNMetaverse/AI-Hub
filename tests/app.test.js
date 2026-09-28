@@ -276,8 +276,7 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.doesNotMatch(newPlanFormHtml, /name="media_type"/);
   assert.doesNotMatch(newPlanFormHtml, /name="model"/);
   assert.match(newPlanFormHtml, /name="description"/);
-  assert.match(newPlanFormHtml, /name="assets"/);
-  assert.match(newPlanFormHtml, /name="asset_role"/);
+  assert.doesNotMatch(newPlanFormHtml, /Upload Assets|name="assets"|name="asset_role"|Asset \/ Media type/);
   assert.doesNotMatch(newPlanFormHtml, /name="prompt"/);
   for (const key of ["sequence_number", "shot_number"]) {
     const changed = await request(`/api/plans/${plan.id}`, { method: "PATCH", cookie: creatorCookie, body: { [key]: 9 } });

@@ -165,12 +165,6 @@
           <p class="text-xs text-zinc-500 sm:col-span-2">Both numbers are required and locked after creation. Every generation and uploaded file belongs to this numbered shot.</p>
           <label class="sm:col-span-2"><span class="field-label">Plan title *</span><input name="title" class="field" placeholder="e.g. Signal discovery" required /></label>
           <label class="sm:col-span-2"><span class="field-label">Brief / Notes</span><textarea name="description" class="field min-h-32 resize-y text-sm leading-6" maxlength="20000" placeholder="Describe the shot, creative intent, requirements, continuity notes, or anything the team should know."></textarea></label>
-          <div class="sm:col-span-2 rounded-3xl border border-white/[0.08] bg-black/20 p-4 sm:p-5">
-            <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_220px]">
-              <label><span class="field-label">Upload Assets / Media</span><input id="newPlanAssetInput" name="assets" type="file" multiple class="field p-2 text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-zinc-300" /><span id="newPlanAssetStatus" class="mt-2 block text-[10px] text-zinc-700">You can select multiple files. They will be attached after the plan is created.</span></label>
-              <label><span class="field-label">Asset / Media type</span><select id="newPlanAssetRole" name="asset_role" class="field"><% generationCatalogs.resource_roles.forEach(role => { %><option <%= role.name === 'First Frame' ? 'selected' : '' %>><%= role.name %></option><% }) %></select></label>
-            </div>
-          </div>
           <div class="flex items-center justify-end gap-3 sm:col-span-2">
             <button type="button" id="cancelModalButton" class="ghost-button">Cancel</button>
             <button type="submit" class="primary-button px-6"><span>Create plan</span><i data-lucide="arrow-right" class="h-4 w-4"></i></button>
