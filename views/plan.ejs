@@ -76,14 +76,17 @@
             <section class="shot-panel" data-panel="generations">
               <div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                 <div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Version history</div><h2 class="mt-2 text-2xl font-semibold tracking-tight">Generation timeline</h2><p class="mt-2 max-w-2xl text-sm text-zinc-500">Every result keeps its exact prompt, model, cost, output, and reusable input lineage.</p></div>
-                <% if (permissions.canEditPlans) { %><button id="addGenerationButton" class="primary-button h-11 px-5"><i data-lucide="plus" class="h-4 w-4"></i>Add generation</button><% } %>
+                <div class="flex flex-wrap items-center gap-2">
+                  <% if (plan.generations.some(generation => generation.resources.some(resource => resource.role === 'Output'))) { %><a href="<%= basePath %>/plans/<%= plan.id %>/generations.zip" class="ghost-button h-11 px-4 text-xs"><i data-lucide="file-archive" class="h-4 w-4"></i>Download all generations</a><% } %>
+                  <% if (permissions.canEditPlans) { %><button id="addGenerationButton" class="primary-button h-11 px-5"><i data-lucide="plus" class="h-4 w-4"></i>Add generation</button><% } %>
+                </div>
               </div>
 
               <div class="mt-5 grid gap-4 md:grid-cols-2">
                 <% if (plan.generations.length) { plan.generations.forEach((generation, index) => { const output = generation.resources.find(resource => resource.role === 'Output'); const isSelected = generation.id === plan.selected_generation_id; %>
-                  <article class="generation-card group overflow-hidden rounded-3xl border <%= isSelected ? 'border-acid/25 bg-acid/[0.025]' : 'border-white/[0.07] bg-[#101113]' %>">
+                  <article class="generation-card group relative overflow-hidden rounded-3xl border <%= isSelected ? 'border-acid/25 bg-acid/[0.025]' : 'border-white/[0.07] bg-[#101113]' %>">
                     <button type="button" class="generation-open-button block w-full text-left" data-generation-id="<%= generation.id %>">
-                      <div class="relative aspect-video overflow-hidden bg-black/35">
+                      <div data-generation-media-area class="relative aspect-video overflow-hidden bg-black/35">
                         <% if (output && output.kind === 'image' && !output.mime_type.includes('svg')) { %><img src="<%= output.content_url %>" alt="<%= generation.version_label %> output" loading="lazy" class="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]" />
                         <% } else if (output && output.kind === 'video') { %><video src="<%= output.content_url %>" muted preload="metadata" class="h-full w-full object-cover"></video>
                         <% } else { %><div class="media-frame absolute inset-0 transition duration-500 group-hover:scale-[1.02]" style="--image-position:<%= plan.image_position %>;filter:<%= index ? 'saturate(.82) brightness(.86)' : 'none' %>"></div><% } %>
@@ -104,6 +107,12 @@
                         <div class="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-3 text-[10px]"><span class="text-zinc-600"><%= Number(generation.total_tokens || 0).toLocaleString() %> tokens</span><span class="font-semibold text-zinc-300"><%= formatCost(generation.generation_cost) %></span></div>
                       </div>
                     </button>
+                    <% if (output && ['image', 'video'].includes(output.kind)) { %>
+                      <div class="absolute right-3 top-14 z-10 flex items-center gap-1.5 rounded-full border border-white/10 bg-black/75 p-1 shadow-lg backdrop-blur-lg">
+                        <a href="<%= output.download_url %>" class="icon-button h-8 w-8 border-0 bg-transparent text-white hover:text-acid" aria-label="Download <%= output.original_name %>" title="Download output"><i data-lucide="download" class="h-4 w-4"></i></a>
+                        <% if (permissions.canEditPlans) { %><button type="button" class="delete-generation-output-button icon-button h-8 w-8 border-0 bg-transparent text-red-300/75 hover:text-red-200" data-resource-id="<%= output.id %>" data-resource-name="<%= output.original_name %>" aria-label="Delete <%= output.original_name %>" title="Delete output"><i data-lucide="trash-2" class="h-4 w-4"></i></button><% } %>
+                      </div>
+                    <% } %>
                     <div class="flex items-center gap-2 border-t border-white/[0.06] p-3">
                       <% if (permissions.canSetCurrentFinal && !isSelected) { %><button type="button" class="select-generation-button ghost-button h-9 flex-1 text-xs" data-generation-id="<%= generation.id %>"><i data-lucide="badge-check" class="h-3.5 w-3.5"></i>Set as current final</button><% } %>
                       <% if (permissions.canApprovePlans) { %>
@@ -122,7 +131,7 @@
             <section class="shot-panel hidden" data-panel="assets">
               <div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
                 <div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Plan preparation</div><h2 class="mt-2 text-2xl font-semibold tracking-tight">Brief, notes, and assets</h2><p class="mt-2 max-w-2xl text-sm text-zinc-500">Keep the shot brief and reusable inputs together before creating generations.</p></div>
-                <div class="flex items-center gap-2"><div class="rounded-full border border-white/[0.08] px-3 py-1.5 text-[10px] text-zinc-500"><%= plan.resource_count %> assets &middot; <%= formatBytes(plan.resource_bytes) %></div><% if (plan.assets.length) { %><select id="resourceFilter" class="field h-9 w-auto min-w-36 py-0 pl-3.5 pr-8 text-xs"><option value="all">All asset types</option><% generationResourceRoles.forEach(role => { %><option value="<%= role %>"><%= role %></option><% }) %></select><% } %></div>
+                <div class="flex flex-wrap items-center gap-2"><div class="rounded-full border border-white/[0.08] px-3 py-1.5 text-[10px] text-zinc-500"><%= plan.resource_count %> assets &middot; <%= formatBytes(plan.resource_bytes) %></div><% if (plan.assets.length) { %><a href="<%= basePath %>/plans/<%= plan.id %>/assets.zip" class="ghost-button h-9 px-3 text-xs"><i data-lucide="file-archive" class="h-3.5 w-3.5"></i>Download all assets</a><select id="resourceFilter" class="field h-9 w-auto min-w-36 py-0 pl-3.5 pr-8 text-xs"><option value="all">All asset types</option><% generationResourceRoles.forEach(role => { %><option value="<%= role %>"><%= role %></option><% }) %></select><% } %></div>
               </div>
 
               <form id="assetBriefForm" class="mt-6 rounded-3xl border border-white/[0.08] bg-[#101113] p-4 sm:p-5">
@@ -176,6 +185,13 @@
         <header class="flex shrink-0 items-center justify-between border-b border-white/[0.07] px-5 py-4 sm:px-6"><div><div class="text-[9px] font-semibold uppercase tracking-[0.15em] text-acid">Generation detail</div><h2 id="generationModalTitle" class="mt-1 text-lg font-semibold">Generation</h2></div><button type="button" class="generation-modal-close icon-button" aria-label="Close generation detail"><i data-lucide="x" class="h-4 w-4"></i></button></header>
         <div id="generationDetailBody" class="min-h-0 flex-1 overflow-y-auto"></div>
         <footer class="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-white/[0.07] px-5 py-4 sm:px-6"><% if (permissions.canDeletePlans) { %><button id="deleteGenerationButton" type="button" class="mr-auto h-10 rounded-full border border-red-300/15 px-4 text-xs text-red-300/65 transition hover:text-red-200"><i data-lucide="trash-2" class="mr-1 inline h-3.5 w-3.5"></i>Delete generation</button><% } %><button id="editGenerationButton" type="button" class="ghost-button h-10 px-4 text-xs"><i data-lucide="pencil" class="h-3.5 w-3.5"></i>Edit details & resources</button><button id="selectGenerationButton" type="button" class="ghost-button h-10 px-4 text-xs"><i data-lucide="badge-check" class="h-3.5 w-3.5"></i>Set as current final</button><% if (permissions.canApprovePlans) { %><button id="approveGenerationButton" type="button" class="primary-button h-10 px-4 text-xs"><i data-lucide="circle-check" class="h-3.5 w-3.5"></i><span id="approveGenerationButtonText">Approve generation</span></button><% } %></footer>
+      </div>
+    </div>
+
+    <div id="generationMediaModal" class="modal-backdrop fixed inset-0 z-[75] hidden items-center justify-center bg-black/90 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="generationMediaTitle">
+      <div class="modal-card flex max-h-[95vh] w-full max-w-7xl flex-col overflow-hidden rounded-[26px] border border-white/10 bg-[#0c0d0f] shadow-float">
+        <header class="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.08] px-4 py-3 sm:px-5"><div class="min-w-0"><div class="text-[9px] font-semibold uppercase tracking-[0.15em] text-acid">Generation media</div><h2 id="generationMediaTitle" class="mt-1 truncate text-sm font-semibold text-white"></h2></div><div class="flex shrink-0 items-center gap-2"><a id="generationMediaDownload" class="ghost-button h-9 px-3 text-xs" href="#"><i data-lucide="download" class="h-4 w-4"></i><span class="hidden sm:inline">Download</span></a><% if (permissions.canEditPlans) { %><button id="generationMediaDelete" type="button" class="icon-button h-9 w-9 text-red-300/75 hover:text-red-200" aria-label="Delete generation output" title="Delete output"><i data-lucide="trash-2" class="h-4 w-4"></i></button><% } %><button type="button" class="generation-media-close icon-button" aria-label="Close media viewer"><i data-lucide="x" class="h-4 w-4"></i></button></div></header>
+        <div id="generationMediaBody" class="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-black/70"></div>
       </div>
     </div>
 

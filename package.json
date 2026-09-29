@@ -19,6 +19,7 @@
     "docker:prod": "docker compose --profile production up --build -d production"
   },
   "dependencies": {
+    "@archiver/archiver": "^0.3.0",
     "better-sqlite3": "^12.2.0",
     "ejs": "^3.1.10",
     "express": "^5.1.0",

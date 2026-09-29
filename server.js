@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { promises as fsp } from "node:fs";
 import { fileURLToPath } from "node:url";
 import express from "express";
+import { ZipArchive } from "@archiver/archiver";
 import { matchingShotNumbers, shotFilters } from "./src/shot-numbers.js";
 import {
   approveGeneration,
@@ -892,6 +893,48 @@ router.get("/resources/:id/content", async (request, response) => {
   if (!resource) return response.status(404).json({ error: "Resource not found" });
   await streamStoredFile(resource, request, response);
 });
+
+async function downloadPlanArchive(request, response, kind) {
+  const planId = Number(request.params.id);
+  if (!Number.isSafeInteger(planId) || planId < 1) return response.status(404).json({ error: "Plan not found" });
+  const plan = getPlan(planId);
+  if (!plan) return response.status(404).json({ error: "Plan not found" });
+
+  const records = kind === "generations"
+    ? plan.generations.flatMap((generation) => generation.resources
+      .filter((resource) => resource.role === "Output")
+      .map((resource) => ({ resource, folder: `v${generation.version_number || generation.id}` })))
+    : plan.assets.map((resource) => ({ resource, folder: "assets" }));
+  if (!records.length) return response.status(404).json({ error: `This plan has no ${kind === "generations" ? "generation outputs" : "assets"} to download` });
+
+  const files = [];
+  try {
+    for (const { resource, folder } of records) {
+      const filePath = absoluteStoragePath(resource.storage_key);
+      const stat = await fsp.stat(filePath);
+      if (!stat.isFile()) throw new Error("Stored file is not available");
+      const safeName = safeOriginalName(resource.original_name).replace(/[\\/]/g, "_").replace(/^\.+$/, "file");
+      files.push({ filePath, entryName: `${folder}/${resource.id}-${safeName}` });
+    }
+  } catch (_error) {
+    return response.status(409).json({ error: "One or more stored files are missing. The ZIP could not be created." });
+  }
+
+  const archive = new ZipArchive({ forceZip64: true, zlib: { level: 1 } });
+  const archiveName = `Seq-${plan.sequence_number}_Shot-${plan.shot_number}-${kind}.zip`;
+  response.setHeader("Content-Type", "application/zip");
+  response.setHeader("Content-Disposition", contentDisposition(archiveName, false));
+  response.setHeader("Cache-Control", "private, no-store");
+  archive.on("error", () => response.destroy());
+  response.on("close", () => { if (!response.writableFinished) archive.abort(); });
+  archive.pipe(response);
+  files.forEach(({ filePath, entryName }) => archive.file(filePath, { name: entryName }));
+  try { await archive.finalize(); }
+  catch (_error) { response.destroy(); }
+}
+
+router.get("/plans/:id/generations.zip", (request, response) => downloadPlanArchive(request, response, "generations"));
+router.get("/plans/:id/assets.zip", (request, response) => downloadPlanArchive(request, response, "assets"));
 
 router.get("/plan-covers/:id/content", async (request, response) => {
   const cover = getPlanCover(Number(request.params.id));

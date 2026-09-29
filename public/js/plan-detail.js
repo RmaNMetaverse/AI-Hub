@@ -155,10 +155,46 @@ function generationResourceCard(resource) {
     : resource.kind === "video"
       ? `<video src="${escapeHtml(resource.content_url)}" muted preload="metadata" class="h-full w-full object-cover"></video>`
       : `<div class="grid h-full place-items-center text-zinc-700"><i data-lucide="${resource.kind === "audio" ? "audio-lines" : "file-box"}" class="h-6 w-6"></i></div>`;
-  return `<a href="${escapeHtml(resource.content_url)}" target="_blank" rel="noopener" class="group overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.02] transition hover:border-white/15">
+  const isMedia = ["image", "video"].includes(resource.kind);
+  const openTag = isMedia
+    ? `<button type="button" data-generation-media-id="${resource.id}" class="group overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.02] text-left transition hover:border-acid/30" aria-label="View ${escapeHtml(resource.original_name)}">`
+    : `<a href="${escapeHtml(resource.download_url)}" class="group overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.02] transition hover:border-white/15">`;
+  return `${openTag}
     <div class="relative aspect-video overflow-hidden bg-black/25">${preview}<span class="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-1 text-[8px] font-semibold text-acid backdrop-blur">${escapeHtml(resource.role)}</span></div>
     <div class="p-3"><div class="truncate text-[11px] font-semibold text-zinc-300">${escapeHtml(resource.original_name)}</div><div class="mt-1 text-[9px] text-zinc-700">${formatBytes(resource.size_bytes)}${resource.generation_usage_count > 1 ? ` · reused in ${resource.generation_usage_count} versions` : ""}</div></div>
-  </a>`;
+  ${isMedia ? "</button>" : "</a>"}`;
+}
+
+const generationMediaModal = document.querySelector("#generationMediaModal");
+
+function openGenerationMedia(resource) {
+  if (!resource || !["image", "video"].includes(resource.kind)) return;
+  document.querySelector("#generationMediaTitle").textContent = resource.original_name;
+  document.querySelector("#generationMediaDownload").href = resource.download_url;
+  const body = document.querySelector("#generationMediaBody");
+  body.replaceChildren();
+  const media = document.createElement(resource.kind === "video" ? "video" : "img");
+  media.src = resource.content_url;
+  media.className = "max-h-[calc(95vh-74px)] max-w-full object-contain";
+  if (resource.kind === "video") {
+    media.controls = true;
+    media.preload = "metadata";
+    media.playsInline = true;
+  } else media.alt = resource.original_name;
+  body.append(media);
+  const deleteButton = document.querySelector("#generationMediaDelete");
+  if (deleteButton) {
+    deleteButton.classList.toggle("hidden", !plan.generations.some((generation) => generation.resources.some((item) => item.id === resource.id && item.role === "Output")));
+    deleteButton.dataset.resourceId = String(resource.id);
+    deleteButton.dataset.resourceName = resource.original_name;
+  }
+  openModal(generationMediaModal);
+  lucide.createIcons();
+}
+
+function closeGenerationMedia() {
+  document.querySelector("#generationMediaBody")?.replaceChildren();
+  closeModal(generationMediaModal);
 }
 
 function openGenerationDetail(id) {
@@ -171,7 +207,7 @@ function openGenerationDetail(id) {
   document.querySelector("#generationModalTitle").innerHTML = `${escapeHtml(generation.version_label)} <span class="status-pill ml-2 ${isApproved ? 'border-lime-400/25 bg-lime-400/10 text-lime-300' : 'border-amber-400/25 bg-amber-400/10 text-amber-300'}">${escapeHtml(generation.status || 'WIP')}</span>`;
   document.querySelector("#generationDetailBody").innerHTML = `
     <div class="grid min-h-[420px] lg:grid-cols-[minmax(0,1.35fr)_minmax(330px,.65fr)]">
-      <div class="min-h-[320px] overflow-hidden bg-black/40">${mediaPreview(output)}</div>
+      <div class="relative min-h-[320px] overflow-hidden bg-black/40">${mediaPreview(output)}${output && ["image", "video"].includes(output.kind) ? `<button type="button" data-generation-media-id="${output.id}" class="ghost-button absolute right-4 top-4 h-9 border-white/20 bg-black/75 px-3 text-xs"><i data-lucide="expand" class="h-3.5 w-3.5"></i>Open viewer</button>` : ""}</div>
       <aside class="border-t border-white/[0.07] p-5 lg:border-l lg:border-t-0 sm:p-6">
         <div class="mb-4 text-sm font-semibold text-acid">#Seq ${generation.sequence_number} / #Shot ${generation.shot_number}</div>
         <div><span class="rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[9px] font-semibold text-zinc-400">${escapeHtml(generation.platform_name || "Platform not recorded")}</span><h3 class="mt-4 text-3xl font-semibold tracking-tight">${escapeHtml(generation.version_label)}</h3><div class="mt-2 text-xs text-zinc-500">${escapeHtml(generation.model)}</div><div class="mt-1 text-[10px] text-zinc-700">${escapeHtml(formatDate(generation.created_at))}</div></div>
@@ -201,7 +237,40 @@ function openGenerationDetail(id) {
   lucide.createIcons();
 }
 
-document.querySelectorAll(".generation-open-button").forEach((button) => button.addEventListener("click", () => openGenerationDetail(button.dataset.generationId)));
+document.querySelectorAll(".generation-open-button").forEach((button) => button.addEventListener("click", (event) => {
+  const generation = generationById(button.dataset.generationId);
+  const output = generation?.resources.find((resource) => resource.role === "Output");
+  if (event.target.closest("[data-generation-media-area]") && output && ["image", "video"].includes(output.kind)) openGenerationMedia(output);
+  else openGenerationDetail(button.dataset.generationId);
+}));
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-generation-media-id]");
+  if (!button) return;
+  const resource = plan.resources.find((item) => item.id === Number(button.dataset.generationMediaId));
+  openGenerationMedia(resource);
+});
+document.querySelectorAll(".generation-media-close").forEach((button) => button.addEventListener("click", closeGenerationMedia));
+generationMediaModal?.addEventListener("click", (event) => { if (event.target === generationMediaModal) closeGenerationMedia(); });
+
+async function deleteGenerationOutput(button) {
+  const resourceId = Number(button.dataset.resourceId);
+  const resource = plan.resources.find((item) => item.id === resourceId);
+  if (!resource || !plan.generations.some((generation) => generation.resources.some((item) => item.id === resourceId && item.role === "Output"))) return;
+  if (!window.confirm(`Delete ${resource.original_name}? It will be removed from every generation that uses it.`)) return;
+  button.disabled = true;
+  const response = await fetch(`/api/resources/${resourceId}`, { method: "DELETE" });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    button.disabled = false;
+    return showToast(payload.error || "Could not delete output");
+  }
+  showToast("Generation output deleted");
+  window.location.hash = "generations";
+  setTimeout(() => window.location.reload(), 350);
+}
+
+document.querySelectorAll(".delete-generation-output-button").forEach((button) => button.addEventListener("click", () => deleteGenerationOutput(button)));
+document.querySelector("#generationMediaDelete")?.addEventListener("click", (event) => deleteGenerationOutput(event.currentTarget));
 
 async function selectGeneration(id) {
   const response = await fetch(`/api/plans/${plan.id}/selected-generation`, {
@@ -558,7 +627,8 @@ document.querySelectorAll(".resource-delete-button").forEach((button) => button.
 
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
-  if (generationEditorModal?.classList.contains("flex")) closeModal(generationEditorModal);
+  if (generationMediaModal?.classList.contains("flex")) closeGenerationMedia();
+  else if (generationEditorModal?.classList.contains("flex")) closeModal(generationEditorModal);
   else if (generationModal?.classList.contains("flex")) closeModal(generationModal);
 });
 

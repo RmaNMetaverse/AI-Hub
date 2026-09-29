@@ -439,6 +439,21 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.ok(planFiles.resources.some((item) => item.id === outputResource.id));
   assert.deepEqual(planFiles.assets.map((item) => item.id), [resource.id]);
   assert.equal(planFiles.resource_count, 1);
+  const generationZip = await request(`/plans/${plan.id}/generations.zip`, { cookie: creatorCookie });
+  assert.equal(generationZip.status, 200);
+  assert.match(generationZip.headers.get("content-type"), /application\/zip/);
+  assert.match(generationZip.headers.get("content-disposition"), /generations\.zip/);
+  const generationZipBytes = Buffer.from(await generationZip.arrayBuffer());
+  assert.equal(generationZipBytes.subarray(0, 2).toString(), "PK");
+  assert.match(generationZipBytes.toString("latin1"), /generation-output\.png/);
+  assert.doesNotMatch(generationZipBytes.toString("latin1"), /reference-frame\.png/);
+  const assetZip = await request(`/plans/${plan.id}/assets.zip`, { cookie: creatorCookie });
+  assert.equal(assetZip.status, 200);
+  assert.match(assetZip.headers.get("content-type"), /application\/zip/);
+  const assetZipBytes = Buffer.from(await assetZip.arrayBuffer());
+  assert.equal(assetZipBytes.subarray(0, 2).toString(), "PK");
+  assert.match(assetZipBytes.toString("latin1"), /reference-frame\.png/);
+  assert.doesNotMatch(assetZipBytes.toString("latin1"), /generation-output\.png/);
 
   const duplicateVersionResponse = await request(`/api/plans/${plan.id}/generations`, {
     method: "POST",
@@ -656,6 +671,10 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.match(html, /v1/);
   assert.match(html, /Higgsfield/);
   assert.match(html, /generation-output\.png/);
+  assert.match(html, /Download all generations/);
+  assert.match(html, /Download all assets/);
+  assert.match(html, /id="generationMediaModal"/);
+  assert.match(html, /delete-generation-output-button/);
   const generationEditor = html.match(/<div id="generationEditorModal"[\s\S]*?<\/form>\s*<\/div>/)?.[0];
   assert.ok(generationEditor);
   assert.match(generationEditor, /id="generationOutputDropZone" data-file-drop-zone/);
@@ -735,6 +754,11 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
     headers: { cookie: creatorCookie }
   });
   assert.equal(deletedContent.status, 404);
+  const deleteOutput = await request(`/api/resources/${outputResource.id}`, { method: "DELETE", cookie: creatorCookie });
+  assert.equal(deleteOutput.status, 204);
+  const afterOutputDelete = await request(`/api/plans/${plan.id}`, { cookie: creatorCookie });
+  assert.ok((await afterOutputDelete.json()).generations.every((generation) => !generation.resources.some((item) => item.id === outputResource.id)));
+  assert.equal((await request(`/plans/${plan.id}/generations.zip`, { cookie: creatorCookie })).status, 404);
 
   const promptDelete = await request(`/api/prompts/${savedPrompt.id}`, { method: "DELETE", cookie: creatorCookie });
   assert.equal(promptDelete.status, 204);
