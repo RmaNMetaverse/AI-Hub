@@ -86,7 +86,7 @@
                 <% if (plan.generations.length) { plan.generations.forEach((generation, index) => { const output = generation.resources.find(resource => resource.role === 'Output'); const isSelected = generation.id === plan.selected_generation_id; %>
                   <article class="generation-card group relative overflow-hidden rounded-3xl border <%= isSelected ? 'border-acid/25 bg-acid/[0.025]' : 'border-white/[0.07] bg-[#101113]' %>">
                     <button type="button" class="generation-open-button block w-full text-left" data-generation-id="<%= generation.id %>">
-                      <div data-generation-media-area class="relative aspect-video overflow-hidden bg-black/35">
+                      <div class="relative aspect-video overflow-hidden bg-black/35">
                         <% if (output && output.kind === 'image' && !output.mime_type.includes('svg')) { %><img src="<%= output.content_url %>" alt="<%= generation.version_label %> output" loading="lazy" class="h-full w-full object-cover transition duration-500 group-hover:scale-[1.02]" />
                         <% } else if (output && output.kind === 'video') { %><video src="<%= output.content_url %>" muted preload="metadata" class="h-full w-full object-cover"></video>
                         <% } else { %><div class="media-frame absolute inset-0 transition duration-500 group-hover:scale-[1.02]" style="--image-position:<%= plan.image_position %>;filter:<%= index ? 'saturate(.82) brightness(.86)' : 'none' %>"></div><% } %>

@@ -237,11 +237,8 @@ function openGenerationDetail(id) {
   lucide.createIcons();
 }
 
-document.querySelectorAll(".generation-open-button").forEach((button) => button.addEventListener("click", (event) => {
-  const generation = generationById(button.dataset.generationId);
-  const output = generation?.resources.find((resource) => resource.role === "Output");
-  if (event.target.closest("[data-generation-media-area]") && output && ["image", "video"].includes(output.kind)) openGenerationMedia(output);
-  else openGenerationDetail(button.dataset.generationId);
+document.querySelectorAll(".generation-open-button").forEach((button) => button.addEventListener("click", () => {
+  openGenerationDetail(button.dataset.generationId);
 }));
 document.addEventListener("click", (event) => {
   const button = event.target.closest("[data-generation-media-id]");
