@@ -272,11 +272,6 @@ const editorFields = {
   token_count: document.querySelector("#generationTokenCountInput")
 };
 
-function resourceRoleOptions(selectedRole) {
-  const options = resourceRoles.includes(selectedRole) ? resourceRoles : [selectedRole, ...resourceRoles].filter(Boolean);
-  return options.map((role) => `<option${role === selectedRole ? " selected" : ""}>${escapeHtml(role)}${resourceRoles.includes(role) ? "" : " (historical)"}</option>`).join("");
-}
-
 function defaultResourceRole() {
   return resourceRoles.includes("Other Input") ? "Other Input" : resourceRoles[0];
 }
@@ -298,50 +293,21 @@ function renderPlatformOptions(generation) {
   editorFields.platform_id.value = String(historicalId || platforms[0]?.id || "");
 }
 
-function renderResourcePicker() {
-  const picker = document.querySelector("#generationResourcePicker");
-  const search = document.querySelector("#generationResourceSearch").value.trim().toLowerCase();
-  const resources = plan.resources.filter((resource) => `${resource.original_name} ${resource.asset_role || ""} ${resource.category} ${resource.kind}`.toLowerCase().includes(search));
-  if (!resources.length) {
-    picker.innerHTML = `<div class="sm:col-span-2 rounded-2xl border border-dashed border-white/10 py-8 text-center text-[11px] text-zinc-700">${plan.resources.length ? "No files match this search." : "No plan assets are available yet. Add reusable inputs in the Assets tab."}</div>`;
+function renderSelectedOutput() {
+  const target = document.querySelector("#generationSelectedOutput");
+  const outputId = [...editorResourceLinks.entries()].find(([, role]) => role === "Output")?.[0];
+  const resource = plan.resources.find((item) => item.id === outputId);
+  target.classList.toggle("hidden", !resource);
+  if (!resource) {
+    target.replaceChildren();
     return;
   }
-
-  picker.innerHTML = resources.map((resource) => {
-    const role = editorResourceLinks.get(resource.id) || "Other Input";
-    const selected = editorResourceLinks.has(resource.id);
-    const thumb = resource.kind === "image" && !String(resource.mime_type).includes("svg")
-      ? `<img src="${escapeHtml(resource.content_url)}" alt="" class="h-full w-full object-cover" />`
-      : `<i data-lucide="${resource.kind === "video" ? "file-video-2" : resource.kind === "audio" ? "audio-lines" : "file-box"}" class="h-4 w-4"></i>`;
-    return `<div class="generation-resource-option flex items-center gap-3 rounded-2xl border ${selected ? "border-acid/20 bg-acid/[0.025]" : "border-white/[0.06] bg-white/[0.015]"} p-3" data-resource-option="${resource.id}">
-      <input type="checkbox" class="generation-resource-checkbox h-4 w-4 accent-[#d6ff45]" data-resource-id="${resource.id}" ${selected ? "checked" : ""} aria-label="Use ${escapeHtml(resource.original_name)}" />
-      <span class="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-xl bg-black/30 text-zinc-600">${thumb}</span>
-      <span class="min-w-0 flex-1"><span class="block truncate text-[11px] font-semibold text-zinc-300">${escapeHtml(resource.original_name)}</span><span class="mt-1 block text-[9px] text-zinc-700">${escapeHtml(resource.asset_role || resource.category)} · ${formatBytes(resource.size_bytes)}${resource.generation_usage_count ? ` · used ${resource.generation_usage_count}×` : ""}</span></span>
-      <select class="generation-resource-role field h-9 w-36 shrink-0 py-0 pl-2.5 pr-7 text-[10px]" data-resource-id="${resource.id}" ${selected ? "" : "disabled"}>${resourceRoleOptions(role)}</select>
-    </div>`;
-  }).join("");
-
-  picker.querySelectorAll(".generation-resource-checkbox").forEach((checkbox) => checkbox.addEventListener("change", () => {
-    const resourceId = Number(checkbox.dataset.resourceId);
-    if (checkbox.checked) {
-      const resource = plan.resources.find((item) => item.id === resourceId);
-      const role = resourceRoles.includes(resource?.asset_role) ? resource.asset_role : defaultResourceRole();
-      if (role === "Output") for (const [otherId, otherRole] of editorResourceLinks.entries()) if (otherRole === "Output") editorResourceLinks.set(otherId, defaultResourceRole());
-      editorResourceLinks.set(resourceId, role);
-    }
-    else editorResourceLinks.delete(resourceId);
-    renderResourcePicker();
-    lucide.createIcons();
-  }));
-  picker.querySelectorAll(".generation-resource-role").forEach((select) => select.addEventListener("change", () => {
-    const resourceId = Number(select.dataset.resourceId);
-    if (select.value === "Output") {
-      for (const [otherId, role] of editorResourceLinks.entries()) if (role === "Output" && otherId !== resourceId) editorResourceLinks.set(otherId, defaultResourceRole());
-    }
-    editorResourceLinks.set(resourceId, select.value);
-    renderResourcePicker();
-    lucide.createIcons();
-  }));
+  const icon = resource.kind === "image" ? "image" : resource.kind === "video" ? "file-video-2" : resource.kind === "audio" ? "audio-lines" : "file-check-2";
+  const preview = resource.kind === "image" && !String(resource.mime_type).includes("svg")
+    ? `<img src="${escapeHtml(resource.content_url)}" alt="" class="h-full w-full object-cover" />`
+    : `<i data-lucide="${icon}" class="h-5 w-5"></i>`;
+  target.innerHTML = `<div class="flex min-w-0 items-center gap-3 rounded-2xl border border-acid/20 bg-acid/[0.045] p-3"><span class="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-black/30 text-acid">${preview}</span><span class="min-w-0 flex-1"><span class="block truncate text-xs font-semibold text-zinc-100" title="${escapeHtml(resource.original_name)}">${escapeHtml(resource.original_name)}</span><span class="mt-1 block text-[10px] text-zinc-500">${formatBytes(resource.size_bytes)} · ${escapeHtml(resource.kind)} output</span></span><span class="rounded-full border border-acid/20 bg-acid/10 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider text-acid">Selected</span></div>`;
+  lucide.createIcons();
 }
 
 function updateCostPreview() {
@@ -381,9 +347,10 @@ function fillEditor(generation = null) {
   editorOriginalTokenPrice = Number(generation?.token_price_snapshot || 0);
   editorResourceLinks = new Map((generation?.resources || []).map((resource) => [resource.id, resource.role]));
   document.querySelector("#generationEditorTitle").textContent = generation ? `Edit ${generation.version_label}` : "Add generation";
-  document.querySelector("#generationResourceSearch").value = "";
-  document.querySelector("#generationUploadStatus").textContent = "The uploaded file will be linked as this generation's Output.";
-  renderResourcePicker();
+  document.querySelector("#generationUploadStatus").textContent = generation?.resources.some((resource) => resource.role === "Output")
+    ? "Drop a new file to replace this output, then save the generation."
+    : "Your uploaded file will be linked when you save the generation.";
+  renderSelectedOutput();
   updateCostPreview();
 }
 
@@ -402,7 +369,12 @@ document.querySelector(".generation-empty-add")?.addEventListener("click", () =>
 document.querySelector("#editGenerationButton")?.addEventListener("click", () => openGenerationEditor(generationById(activeGenerationId)));
 document.querySelectorAll(".generation-editor-close").forEach((button) => button.addEventListener("click", () => closeModal(generationEditorModal)));
 generationEditorModal?.addEventListener("click", (event) => { if (event.target === generationEditorModal) closeModal(generationEditorModal); });
-document.querySelector("#generationResourceSearch")?.addEventListener("input", () => { renderResourcePicker(); lucide.createIcons(); });
+document.querySelector("#generationOutputDropZone")?.addEventListener("keydown", (event) => {
+  if (["Enter", " "].includes(event.key)) {
+    event.preventDefault();
+    document.querySelector("#generationUploadInput")?.click();
+  }
+});
 
 function generationPayload() {
   return {
@@ -472,7 +444,6 @@ function uploadResource(file, category, notes, onProgress = () => {}, numbers = 
 }
 
 const generationUploadInput = document.querySelector("#generationUploadInput");
-document.querySelector("#generationUploadButton")?.addEventListener("click", () => { if (validGenerationNumbers()) generationUploadInput.click(); });
 generationUploadInput?.addEventListener("change", async () => {
   const files = [...generationUploadInput.files];
   generationUploadInput.value = "";
@@ -488,16 +459,15 @@ generationUploadInput?.addEventListener("change", async () => {
       const resource = await uploadResource(file, "Generation", `Uploaded for ${versionLabel}`, (percentage) => { status.textContent = `Uploading ${file.name}: ${percentage}%`; }, plan, "Output");
       resource.generation_usage_count = 0;
       plan.resources.unshift(resource);
-      for (const [otherId, otherRole] of editorResourceLinks.entries()) if (otherRole === "Output") editorResourceLinks.set(otherId, defaultResourceRole());
+      for (const [otherId, otherRole] of editorResourceLinks.entries()) if (otherRole === "Output") editorResourceLinks.delete(otherId);
       editorResourceLinks.set(resource.id, "Output");
+      renderSelectedOutput();
       uploaded += 1;
     } catch (error) {
       showToast(error.message);
     }
   }
-  status.textContent = uploaded ? `${uploaded} new file${uploaded === 1 ? "" : "s"} uploaded and selected.` : "No files uploaded.";
-  renderResourcePicker();
-  lucide.createIcons();
+  status.textContent = uploaded ? "Output uploaded. Save the generation to link it to this version." : "No file was uploaded.";
 });
 
 const resourceUploadForm = document.querySelector("#resourceUploadForm");
@@ -568,9 +538,6 @@ resourceUploadForm?.addEventListener("submit", (event) => event.preventDefault()
 resourceDropZone?.addEventListener("click", (event) => { if (event.target !== resourceFileInput) resourceFileInput.click(); });
 resourceDropZone?.addEventListener("keydown", (event) => { if (["Enter", " "].includes(event.key)) { event.preventDefault(); resourceFileInput.click(); } });
 resourceFileInput?.addEventListener("change", () => { uploadShotLibraryFiles(resourceFileInput.files); resourceFileInput.value = ""; });
-for (const eventName of ["dragenter", "dragover"]) resourceDropZone?.addEventListener(eventName, (event) => { event.preventDefault(); resourceDropZone.classList.add("border-acid/50", "bg-acid/[0.04]"); });
-for (const eventName of ["dragleave", "drop"]) resourceDropZone?.addEventListener(eventName, (event) => { event.preventDefault(); resourceDropZone.classList.remove("border-acid/50", "bg-acid/[0.04]"); });
-resourceDropZone?.addEventListener("drop", (event) => uploadShotLibraryFiles(event.dataTransfer.files));
 
 document.querySelector("#resourceFilter")?.addEventListener("change", (event) => {
   document.querySelectorAll("[data-resource-card]").forEach((card) => card.classList.toggle("hidden", event.target.value !== "all" && card.dataset.resourceRole !== event.target.value));

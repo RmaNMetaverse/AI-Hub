@@ -1,6 +1,12 @@
 /* Shared drag-and-drop enhancement for every file picker. */
 (function () {
-  const interactiveSelector = "button, input, select, textarea, a, label";
+  function hasDraggedFiles(dataTransfer) {
+    return Boolean(dataTransfer && (
+      [...(dataTransfer.types || [])].includes("Files")
+      || [...(dataTransfer.items || [])].some((item) => item.kind === "file")
+      || dataTransfer.files?.length
+    ));
+  }
 
   function filesFromTransfer(dataTransfer) {
     return dataTransfer && dataTransfer.files ? [...dataTransfer.files] : [];
@@ -10,7 +16,7 @@
     if (!input || !files.length) return;
     try {
       const transfer = new DataTransfer();
-      files.forEach((file) => transfer.items.add(file));
+      (input.multiple ? files : files.slice(0, 1)).forEach((file) => transfer.items.add(file));
       input.files = transfer.files;
       input.dispatchEvent(new Event("change", { bubbles: true }));
     } catch {
@@ -37,21 +43,30 @@
     const zone = zoneFor(input);
     zone.dataset.fileDropZone = "true";
     zone.classList.add("file-drop-zone");
+    if (zone.tagName === "LABEL" && !zone.id) zone.classList.add("file-drop-field");
     zone.setAttribute("data-file-drop-for", input.id || input.name || "file");
 
     const setActive = (active) => zone.classList.toggle("file-drop-active", active);
     ["dragenter", "dragover"].forEach((eventName) => zone.addEventListener(eventName, (event) => {
+      if (!hasDraggedFiles(event.dataTransfer)) return;
       event.preventDefault();
       event.stopPropagation();
-      if (filesFromTransfer(event.dataTransfer).length) setActive(true);
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      setActive(true);
     }));
     ["dragleave", "drop"].forEach((eventName) => zone.addEventListener(eventName, (event) => {
+      if (!hasDraggedFiles(event.dataTransfer) && !zone.classList.contains("file-drop-active")) return;
       event.preventDefault();
       event.stopPropagation();
       if (eventName === "dragleave" && event.relatedTarget && zone.contains(event.relatedTarget)) return;
       setActive(false);
     }));
-    zone.addEventListener("drop", (event) => assignFiles(input, filesFromTransfer(event.dataTransfer)));
+    zone.addEventListener("drop", (event) => {
+      if (!hasDraggedFiles(event.dataTransfer)) return;
+      assignFiles(input, filesFromTransfer(event.dataTransfer));
+    });
+    window.addEventListener("dragend", () => setActive(false));
+    window.addEventListener("drop", () => setActive(false));
   }
 
   function init() {

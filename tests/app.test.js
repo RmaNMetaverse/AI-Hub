@@ -656,6 +656,11 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.match(html, /v1/);
   assert.match(html, /Higgsfield/);
   assert.match(html, /generation-output\.png/);
+  const generationEditor = html.match(/<div id="generationEditorModal"[\s\S]*?<\/form>\s*<\/div>/)?.[0];
+  assert.ok(generationEditor);
+  assert.match(generationEditor, /id="generationOutputDropZone" data-file-drop-zone/);
+  assert.doesNotMatch(generationEditor, /reference-frame\.png|generationResourcePicker|generationResourceSearch/);
+  assert.match(html, /id="resourceDropZone" data-file-drop-zone/);
   const assetsPanel = html.match(/<section class="shot-panel hidden" data-panel="assets">([\s\S]*?)<\/section>/)?.[1];
   assert.ok(assetsPanel);
   assert.match(assetsPanel, /reference-frame\.png/);

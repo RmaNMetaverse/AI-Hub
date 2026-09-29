@@ -239,6 +239,20 @@
     transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
   }
 
+  .file-drop-field {
+    display: block;
+    cursor: pointer;
+    border: 1px dashed rgba(255, 255, 255, 0.13);
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.015);
+    padding: 0.85rem;
+  }
+
+  .file-drop-field:hover {
+    border-color: rgba(214, 255, 69, 0.35);
+    background: rgba(214, 255, 69, 0.025);
+  }
+
   .file-drop-zone.file-drop-active {
     border-color: rgba(214, 255, 69, 0.8) !important;
     background-color: rgba(214, 255, 69, 0.08) !important;
