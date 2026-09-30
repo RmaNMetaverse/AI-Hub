@@ -182,6 +182,7 @@ function openGenerationMedia(resource) {
     media.playsInline = true;
   } else media.alt = resource.original_name;
   body.append(media);
+  media.id = "generationMediaElement";
   const deleteButton = document.querySelector("#generationMediaDelete");
   if (deleteButton) {
     deleteButton.classList.toggle("hidden", !plan.generations.some((generation) => generation.resources.some((item) => item.id === resource.id && item.role === "Output")));
@@ -191,6 +192,13 @@ function openGenerationMedia(resource) {
   openModal(generationMediaModal);
   lucide.createIcons();
 }
+
+document.querySelector("#generationMediaFullscreen")?.addEventListener("click", async () => {
+  const media = document.querySelector("#generationMediaElement");
+  if (!media) return;
+  if (document.fullscreenElement) return document.exitFullscreen?.();
+  await media.requestFullscreen?.();
+});
 
 function closeGenerationMedia() {
   document.querySelector("#generationMediaBody")?.replaceChildren();
@@ -246,6 +254,10 @@ document.addEventListener("click", (event) => {
   const resource = plan.resources.find((item) => item.id === Number(button.dataset.generationMediaId));
   openGenerationMedia(resource);
 });
+document.querySelectorAll(".plan-image-viewer-button").forEach((button) => button.addEventListener("click", () => {
+  const resource = plan.assets.find((item) => item.id === Number(button.dataset.resourceId));
+  openGenerationMedia(resource);
+}));
 document.querySelectorAll(".generation-media-close").forEach((button) => button.addEventListener("click", closeGenerationMedia));
 generationMediaModal?.addEventListener("click", (event) => { if (event.target === generationMediaModal) closeGenerationMedia(); });
 
