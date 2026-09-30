@@ -251,6 +251,17 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(plan.shot_code, "SQ99-SH007");
   assert.equal(Object.hasOwn(plan, "due_date"), false);
   assert.deepEqual(plan.assignees, []);
+  const testPlanResponse = await request("/api/plans", {
+    method: "POST",
+    cookie: creatorCookie,
+    body: { title: "Test Ghayegh", is_test_plan: true, description: "Temporary test shot" }
+  });
+  assert.equal(testPlanResponse.status, 201);
+  const testPlan = await testPlanResponse.json();
+  assert.equal(testPlan.is_test_plan, 1);
+  assert.equal(testPlan.sequence_number, null);
+  assert.equal(testPlan.shot_number, null);
+  assert.equal(testPlan.title, "Test Ghayegh");
   assert.equal((await request(`/api/plans/${plan.id}/assignees`, { method: "PUT", cookie: creatorCookie, body: { user_ids: [creatorUserId] } })).status, 403);
   const availableAssignees = await request("/api/assignment-users", { cookie: adminCookie });
   assert.equal(availableAssignees.status, 200);

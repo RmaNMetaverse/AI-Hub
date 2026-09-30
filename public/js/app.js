@@ -25,6 +25,8 @@ const els = {
   modal: document.querySelector("#newPlanModal"),
   modalCard: document.querySelector("#modalCard"),
   form: document.querySelector("#newPlanForm"),
+  testPlan: document.querySelector("#isTestPlanInput"),
+  numberedPlanFields: document.querySelector("#numberedPlanFields"),
   toast: document.querySelector("#toast")
 };
 
@@ -102,7 +104,7 @@ function shotCard(plan) {
         ${plan.issue ? `<div class="absolute inset-x-3 bottom-3 rounded-lg bg-black/70 p-2 text-xs text-orange-200">${escapeHtml(plan.issue)}</div>` : ""}
       </div>
       <div class="p-4">
-        <div class="flex flex-wrap gap-2 text-sm font-semibold text-acid"><span>#Seq ${plan.sequence_number}</span><span class="text-zinc-600">/</span><span>#Shot ${plan.shot_number}</span></div>
+        <div class="flex flex-wrap gap-2 text-sm font-semibold text-acid">${plan.is_test_plan ? "Test plan" : `<span>#Seq ${plan.sequence_number}</span><span class="text-zinc-600">/</span><span>#Shot ${plan.shot_number}</span>`}</div>
         <h2 class="mt-2 truncate text-lg font-semibold text-zinc-100">${escapeHtml(plan.title)}</h2>
         <p class="mt-1 line-clamp-2 min-h-9 text-xs leading-[18px] text-zinc-500">${escapeHtml(plan.description)}</p>
         <div class="mt-4 flex items-center justify-between gap-2 border-t border-white/[0.07] pt-3 text-xs text-zinc-500"><span class="truncate">${escapeHtml(plan.model)}</span><span class="shrink-0">${plan.generation_count} generations</span></div>
@@ -166,8 +168,18 @@ function openModal() {
   els.modal.classList.remove("hidden", "pointer-events-none");
   els.modal.classList.add("grid");
   els.modal.setAttribute("aria-hidden", "false");
+  syncTestPlanFields();
   requestAnimationFrame(() => els.modalCard.classList.add("open"));
   setTimeout(() => els.form.elements.title.focus(), 220);
+}
+
+function syncTestPlanFields() {
+  const testPlan = Boolean(els.testPlan?.checked);
+  els.numberedPlanFields?.classList.toggle("hidden", testPlan);
+  ["sequence_number", "shot_number"].forEach((name) => {
+    const field = els.form.elements[name];
+    if (field) { field.required = !testPlan; field.disabled = testPlan; }
+  });
 }
 
 function closeModal() {
@@ -226,6 +238,7 @@ els.form.addEventListener("submit", async (event) => {
   const body = {
     sequence_number: formData.get("sequence_number"),
     shot_number: formData.get("shot_number"),
+    is_test_plan: Boolean(els.testPlan?.checked),
     title: formData.get("title"),
     description: formData.get("description")
   };
@@ -234,14 +247,14 @@ els.form.addEventListener("submit", async (event) => {
     const result = await response.json();
     if (!response.ok) return showToast(result.error || "Could not create plan");
 
-    const refreshedResponse = await fetch(`/api/plans?sequence_number=${result.sequence_number}&shot_number=${result.shot_number}`);
+    const refreshedResponse = await fetch(result.is_test_plan ? "/api/plans" : `/api/plans?sequence_number=${result.sequence_number}&shot_number=${result.shot_number}`);
     const refreshedPlans = refreshedResponse.ok ? await refreshedResponse.json() : [];
     const refreshed = refreshedPlans.find((plan) => plan.id === result.id) || result;
     state.plans = [refreshed, ...state.plans.filter((plan) => plan.id !== result.id)];
     els.form.reset();
     closeModal();
     render();
-    showToast("AI Plan created");
+    showToast(result.is_test_plan ? "Test plan created" : "AI Plan created");
   } catch {
     showToast("The request was interrupted. Refresh the page to confirm the plan.");
   } finally {
@@ -249,6 +262,8 @@ els.form.addEventListener("submit", async (event) => {
     button.querySelector("span").textContent = "Create plan";
   }
 });
+
+els.testPlan?.addEventListener("change", syncTestPlanFields);
 
 const coverModal = document.querySelector("#coverModal");
 const coverModalCard = document.querySelector("#coverModalCard");

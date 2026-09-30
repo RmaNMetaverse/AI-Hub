@@ -27,6 +27,7 @@ db.exec(`
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     shot_code TEXT NOT NULL,
     title TEXT NOT NULL,
+    is_test_plan INTEGER NOT NULL DEFAULT 0,
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'WIP',
     media_type TEXT NOT NULL DEFAULT 'Video',
@@ -323,6 +324,7 @@ function ensureColumn(table, column, definition) {
 ensureColumn("ai_plans", "selected_generation_id", "INTEGER");
 ensureColumn("ai_plans", "sequence_number", "INTEGER");
 ensureColumn("ai_plans", "shot_number", "INTEGER");
+ensureColumn("ai_plans", "is_test_plan", "INTEGER NOT NULL DEFAULT 0");
 ensureColumn("generations", "sequence_number", "INTEGER");
 ensureColumn("generations", "shot_number", "INTEGER");
 ensureColumn("generations", "prompt", "TEXT NOT NULL DEFAULT ''");
@@ -1108,7 +1110,7 @@ function replaceGenerationResources(generationId, links) {
 export function createGeneration(planId, input, createdBy) {
   const plan = db.prepare("SELECT * FROM ai_plans WHERE id = ?").get(planId);
   if (!plan) throw new Error("Shot not found");
-  const numbers = matchingShotNumbers(plan, input);
+  const numbers = plan.is_test_plan ? { sequence_number: null, shot_number: null } : matchingShotNumbers(plan, input);
   const fields = generationFields(planId, input, { prompt: plan.prompt, negative_prompt: plan.negative_prompt, model: plan.model });
   const links = generationLinks(planId, input.resources);
 
@@ -1686,8 +1688,9 @@ const allowedStatuses = new Set(["WIP", "Approved"]);
 export function createPlan(input) {
   const title = String(input.title || "").trim();
   if (!title) throw new Error("Title is required");
-  const numbers = shotNumbers(input);
-  const shotCode = `SQ${String(numbers.sequence_number).padStart(2, "0")}-SH${String(numbers.shot_number).padStart(3, "0")}`;
+  const isTestPlan = input.is_test_plan === true || input.is_test_plan === 1 || ["true", "1", "on"].includes(String(input.is_test_plan || "").toLowerCase());
+  const numbers = isTestPlan ? { sequence_number: null, shot_number: null } : shotNumbers(input);
+  const shotCode = isTestPlan ? "TEST" : `SQ${String(numbers.sequence_number).padStart(2, "0")}-SH${String(numbers.shot_number).padStart(3, "0")}`;
 
   const project = db.prepare("SELECT id FROM projects ORDER BY id LIMIT 1").get();
   const status = allowedStatuses.has(input.status) ? input.status : "WIP";
@@ -1700,11 +1703,11 @@ export function createPlan(input) {
 
   const result = db.prepare(`
     INSERT INTO ai_plans (
-      project_id, shot_code, title, description, status, media_type, owner, model,
+      project_id, shot_code, title, is_test_plan, description, status, media_type, owner, model,
       due_date, priority, next_action, prompt, aspect_ratio, duration, tags, image_position, sequence_number, shot_number, sequence_name
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    project.id, shotCode, title, String(input.description || ""), status,
+    project.id, shotCode, title, Number(isTestPlan), String(input.description || ""), status,
     String(input.media_type || "Video"), String(input.owner || "Unassigned"),
     model, null,
     String(input.priority || "Medium"), String(input.next_action || "Complete creative brief"),

@@ -756,7 +756,7 @@ router.post("/api/plans/:id/resources", requirePermission("canEditPlans"), (requ
       }
       if (!request.file) return response.status(400).json({ error: "Choose a file to upload" });
       storageKey = storageKeyForFile(request.file.path);
-      try { matchingShotNumbers(plan, request.body); }
+      try { if (!plan.is_test_plan) matchingShotNumbers(plan, request.body); }
       catch (error) {
         await removeStoredFile(storageKey);
         return response.status(400).json({ error: error.message });

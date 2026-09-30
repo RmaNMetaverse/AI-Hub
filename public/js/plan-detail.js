@@ -389,16 +389,18 @@ function updateCostPreview() {
     : "Current Admin price — it will be frozen when saved";
 }
 
-editorFields.token_count.addEventListener("input", updateCostPreview);
-editorFields.platform_id.addEventListener("change", updateCostPreview);
+editorFields.token_count?.addEventListener("input", updateCostPreview);
+editorFields.platform_id?.addEventListener("change", updateCostPreview);
 
 function fillEditor(generation = null) {
   const nextVersion = Math.max(0, ...plan.generations.map((item) => Number(item.version_number || 0))) + 1;
   const planModel = (generationCatalogs.models || []).some((model) => model.name === plan.model) ? plan.model : generationCatalogs.models?.[0]?.name || "";
   editorFields.id.value = generation?.id || "";
   for (const key of ["sequence_number", "shot_number"]) {
-    editorFields[key].value = generation?.[key] ?? plan[key];
-    editorFields[key].readOnly = Boolean(generation);
+    if (editorFields[key]) {
+      editorFields[key].value = generation?.[key] ?? plan[key] ?? "";
+      editorFields[key].readOnly = Boolean(generation);
+    }
   }
   editorFields.version_number.value = generation?.version_number || nextVersion;
   if (editorFields.status) editorFields.status.value = generation?.status || "WIP";
@@ -444,8 +446,8 @@ document.querySelector("#generationOutputDropZone")?.addEventListener("keydown",
 
 function generationPayload() {
   return {
-    sequence_number: Number(editorFields.sequence_number.value),
-    shot_number: Number(editorFields.shot_number.value),
+    sequence_number: plan.is_test_plan ? null : Number(editorFields.sequence_number.value),
+    shot_number: plan.is_test_plan ? null : Number(editorFields.shot_number.value),
     version_number: Number(editorFields.version_number.value),
     status: editorFields.status?.value || "WIP",
     model: editorFields.model.value,
@@ -481,6 +483,7 @@ document.querySelector("#generationEditorForm")?.addEventListener("submit", asyn
 
 function validGenerationNumbers() {
   if (!document.querySelector("#generationEditorForm").reportValidity()) return false;
+  if (plan.is_test_plan) return true;
   if (Number(editorFields.sequence_number.value) !== plan.sequence_number || Number(editorFields.shot_number.value) !== plan.shot_number) {
     showToast(`Use this shot's locked numbers: #Seq ${plan.sequence_number} / #Shot ${plan.shot_number}`);
     return false;
