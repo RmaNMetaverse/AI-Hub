@@ -262,6 +262,15 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(testPlan.sequence_number, null);
   assert.equal(testPlan.shot_number, null);
   assert.equal(testPlan.title, "Test Ghayegh");
+  const testGenerationResponse = await request(`/api/plans/${testPlan.id}/generations`, {
+    method: "POST",
+    cookie: creatorCookie,
+    body: { version_number: 1, model: "Seedance 2.5", platform_id: higgsfield.id, token_count: 1 }
+  });
+  assert.equal(testGenerationResponse.status, 201);
+  const testGenerationPayload = await testGenerationResponse.json();
+  assert.equal(testGenerationPayload.generation.sequence_number, null);
+  assert.equal(testGenerationPayload.generation.shot_number, null);
   assert.equal((await request(`/api/plans/${plan.id}/assignees`, { method: "PUT", cookie: creatorCookie, body: { user_ids: [creatorUserId] } })).status, 403);
   const availableAssignees = await request("/api/assignment-users", { cookie: adminCookie });
   assert.equal(availableAssignees.status, 200);

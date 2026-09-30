@@ -215,6 +215,15 @@
     color: #d6ff45 !important;
   }
 
+  select.compact-filter {
+    height: 2.5rem;
+    min-height: 2.5rem;
+    line-height: 1rem;
+    padding-top: 0;
+    padding-bottom: 0;
+    vertical-align: middle;
+  }
+
   .field-label {
     @apply mb-2 block text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500;
   }

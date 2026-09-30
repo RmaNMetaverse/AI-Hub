@@ -83,9 +83,9 @@ export function migrateShotNumbers(db) {
       WHEN NEW.sequence_number IS NOT OLD.sequence_number OR NEW.shot_number IS NOT OLD.shot_number
       BEGIN SELECT RAISE(ABORT, '#Seq and #Shot are locked'); END;
       CREATE TRIGGER generations_numbers_insert BEFORE INSERT ON generations
-      WHEN NEW.sequence_number IS NOT (SELECT sequence_number FROM ai_plans WHERE id = NEW.plan_id)
-        OR NEW.shot_number IS NOT (SELECT shot_number FROM ai_plans WHERE id = NEW.plan_id)
-        OR NEW.sequence_number IS NULL OR NEW.shot_number IS NULL
+      WHEN ${hasTestFlag
+        ? "NOT EXISTS (SELECT 1 FROM ai_plans WHERE id = NEW.plan_id AND is_test_plan = 1) AND (NEW.sequence_number IS NOT (SELECT sequence_number FROM ai_plans WHERE id = NEW.plan_id) OR NEW.shot_number IS NOT (SELECT shot_number FROM ai_plans WHERE id = NEW.plan_id) OR NEW.sequence_number IS NULL OR NEW.shot_number IS NULL)"
+        : "NEW.sequence_number IS NOT (SELECT sequence_number FROM ai_plans WHERE id = NEW.plan_id) OR NEW.shot_number IS NOT (SELECT shot_number FROM ai_plans WHERE id = NEW.plan_id) OR NEW.sequence_number IS NULL OR NEW.shot_number IS NULL"}
       BEGIN SELECT RAISE(ABORT, 'Generation numbers must match its shot'); END;
       CREATE TRIGGER generations_numbers_locked BEFORE UPDATE OF plan_id, sequence_number, shot_number ON generations
       WHEN NEW.plan_id IS NOT OLD.plan_id OR NEW.sequence_number IS NOT OLD.sequence_number OR NEW.shot_number IS NOT OLD.shot_number
