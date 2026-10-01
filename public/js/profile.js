@@ -21,7 +21,11 @@
       const image = document.createElement("img");
       image.src = url;
       image.alt = "Your profile picture";
-      image.className = "h-full w-full rounded-full object-cover";
+      image.className = "h-full w-full object-contain";
+      target.style.background = "transparent";
+      image.style.filter = "none";
+      image.style.mixBlendMode = "normal";
+      image.style.opacity = "1";
       target.replaceChildren(image);
     }
   }
