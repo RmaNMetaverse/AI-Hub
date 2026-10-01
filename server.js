@@ -6,6 +6,8 @@ import express from "express";
 import { ZipArchive } from "@archiver/archiver";
 import { matchingShotNumbers, shotFilters } from "./src/shot-numbers.js";
 import {
+  userAvatar,
+  saveUserAvatar,
   approveGeneration,
   approvePlan,
   createAccount,
@@ -95,6 +97,7 @@ import {
   uploadPlanCoverFile,
   uploadResourceFile
 } from "./src/storage.js";
+import { uploadAvatarFile } from "./src/storage.js";
 
 const serverPath = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(serverPath);
@@ -315,6 +318,53 @@ router.get("/health", (_request, response) => {
 });
 
 router.use(requireAuth);
+
+router.get("/profile", (request, response) => response.render("profile", { currentUser: request.user, basePath }));
+router.get("/api/profile", (request, response) => {
+  const avatar = userAvatar(request.user.id);
+  response.json({ ...request.user, avatar_url: avatar?.avatar_storage_key ? `${basePath}/avatars/${request.user.id}?v=${encodeURIComponent(avatar.avatar_storage_key)}` : null });
+});
+router.get("/avatars/:id", (request, response) => {
+  const avatar = userAvatar(Number(request.params.id));
+  if (!avatar?.avatar_storage_key) return response.sendStatus(404);
+  response.type(avatar.avatar_mime_type).set("X-Content-Type-Options", "nosniff").sendFile(absoluteStoragePath(avatar.avatar_storage_key));
+});
+router.post("/api/profile/avatar", (request, response) => {
+  request.params.id = request.user.id;
+  uploadAvatarFile(request, response, async (error) => {
+    let key;
+    try {
+      if (error) return response.status(400).json({ error: error.code === "LIMIT_FILE_SIZE" ? "Avatar must be under 5 MB" : error.message });
+      if (!request.file) return response.status(400).json({ error: "Choose a JPEG, PNG, WebP, or GIF image" });
+      key = storageKeyForFile(request.file.path);
+      const data = await fsp.readFile(request.file.path);
+      const valid = (request.file.mimetype === "image/png" && data.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])))
+        || (request.file.mimetype === "image/jpeg" && data[0] === 255 && data[1] === 216 && data[2] === 255)
+        || (request.file.mimetype === "image/gif" && /^GIF8[79]a$/.test(data.subarray(0,6).toString()))
+        || (request.file.mimetype === "image/webp" && data.subarray(0,4).toString() === "RIFF" && data.subarray(8,12).toString() === "WEBP");
+      if (!valid) { await removeStoredFile(key); return response.status(400).json({ error: "The file is not a supported image" }); }
+      const previous = userAvatar(request.user.id);
+      saveUserAvatar(request.user.id, key, request.file.mimetype);
+      if (previous?.avatar_storage_key) await removeStoredFile(previous.avatar_storage_key).catch(() => {});
+      recordActivity(request.user, "updated_avatar", "user", request.user.id, "Updated profile picture");
+      response.json({ avatar_url: `${basePath}/avatars/${request.user.id}?v=${encodeURIComponent(key)}` });
+    } catch {
+      if (key) await removeStoredFile(key).catch(() => {});
+      response.status(500).json({ error: "Could not save avatar" });
+    }
+  });
+});
+router.post("/api/profile/password", async (request, response) => {
+  try {
+    const authenticated = await authenticateAccount(request.user.username, request.body.current_password);
+    if (!authenticated) return response.status(400).json({ error: "Current password is incorrect" });
+    if (request.body.password !== request.body.confirmation) return response.status(400).json({ error: "Passwords do not match" });
+    const user = await resetAccountPassword(request.user.id, request.body.password);
+    beginSession(response, request, user);
+    recordActivity(request.user, "changed_password", "user", request.user.id, "Changed their password");
+    response.json({ success: true });
+  } catch (error) { response.status(400).json({ error: error.message }); }
+});
 
 router.get("/storage/thumbnails/cinematic-frames", (request, response) => {
   const thumbnailPath = absoluteStoragePath(cinematicThumbnailStorageKey);

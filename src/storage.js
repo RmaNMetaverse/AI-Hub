@@ -82,6 +82,14 @@ export const uploadResourceFile = multer({
 
 export const maxCoverUploadBytes = Math.min(maxUploadBytes, 25 * 1024 * 1024);
 
+export const uploadAvatarFile = multer({
+  storage: uploadStorage("avatars"),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 0 },
+  fileFilter(_request, file, callback) {
+    callback(null, ["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.mimetype));
+  }
+}).single("file");
+
 export const uploadPlanCoverFile = multer({
   storage: uploadStorage("plan-covers"),
   limits: {

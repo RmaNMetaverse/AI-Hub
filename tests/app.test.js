@@ -816,4 +816,21 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
     body: { username: "docker.creator", password: "Reset-Creator-Password-1" }
   });
   assert.equal(resetPasswordLogin.status, 200);
+  const profileCookie = sessionCookie(resetPasswordLogin);
+  assert.equal((await request("/profile", { cookie: profileCookie })).status, 200);
+  const avatarForm = new FormData();
+  avatarForm.append("file", new Blob([Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j9ioAAAAASUVORK5CYII=", "base64")], { type: "image/png" }), "avatar.png");
+  const avatarResponse = await fetch(`${origin}/api/profile/avatar`, { method: "POST", headers: { cookie: profileCookie }, body: avatarForm });
+  assert.equal(avatarResponse.status, 200);
+  const avatar = await avatarResponse.json();
+  assert.equal((await request(avatar.avatar_url, { cookie: profileCookie })).status, 200);
+  const invalidChange = await request("/api/profile/password", { method: "POST", cookie: profileCookie,
+    body: { current_password: "incorrect", password: "Self-Changed-Password-1", confirmation: "Self-Changed-Password-1" } });
+  assert.equal(invalidChange.status, 400);
+  const passwordChange = await request("/api/profile/password", { method: "POST", cookie: profileCookie,
+    body: { current_password: "Reset-Creator-Password-1", password: "Self-Changed-Password-1", confirmation: "Self-Changed-Password-1" } });
+  assert.equal(passwordChange.status, 200);
+  assert.equal((await request("/api/profile", { cookie: profileCookie })).status, 401);
+  assert.equal((await request("/api/profile", { cookie: sessionCookie(passwordChange) })).status, 200);
+  assert.equal((await request("/auth/login", { method: "POST", body: { username: "docker.creator", password: "Self-Changed-Password-1" } })).status, 200);
 });

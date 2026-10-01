@@ -345,6 +345,16 @@ ensureColumn("generations", "status", "TEXT NOT NULL DEFAULT 'WIP'");
 ensureColumn("generations", "updated_at", "TEXT");
 ensureColumn("resources", "asset_role", "TEXT NOT NULL DEFAULT 'Other Input'");
 ensureColumn("users", "role_id", "INTEGER REFERENCES workspace_roles(id)");
+ensureColumn("users", "avatar_storage_key", "TEXT");
+ensureColumn("users", "avatar_mime_type", "TEXT");
+
+export function userAvatar(id) {
+  return db.prepare("SELECT avatar_storage_key, avatar_mime_type FROM users WHERE id = ?").get(id);
+}
+
+export function saveUserAvatar(id, storageKey, mimeType) {
+  db.prepare("UPDATE users SET avatar_storage_key = ?, avatar_mime_type = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(storageKey, mimeType, id);
+}
 db.exec(`
   CREATE INDEX IF NOT EXISTS ai_plans_selected_generation_idx ON ai_plans(selected_generation_id);
   CREATE INDEX IF NOT EXISTS generations_status_idx ON generations(status);
