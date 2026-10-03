@@ -262,15 +262,6 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   assert.equal(testPlan.sequence_number, null);
   assert.equal(testPlan.shot_number, null);
   assert.equal(testPlan.title, "Test Ghayegh");
-  const testGenerationResponse = await request(`/api/plans/${testPlan.id}/generations`, {
-    method: "POST",
-    cookie: creatorCookie,
-    body: { version_number: 1, model: "Seedance 2.5", platform_id: higgsfield.id, token_count: 1 }
-  });
-  assert.equal(testGenerationResponse.status, 201);
-  const testGenerationPayload = await testGenerationResponse.json();
-  assert.equal(testGenerationPayload.generation.sequence_number, null);
-  assert.equal(testGenerationPayload.generation.shot_number, null);
   const testOutputs = [];
   for (const name of ["flow-option-a.mp4", "flow-option-b.mp4"]) {
     const upload = new FormData();
@@ -281,6 +272,22 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
     assert.equal(result.status, 201);
     testOutputs.push(await result.json());
   }
+  const failedGeneration = await request(`/api/plans/${testPlan.id}/generations`, {
+    method: "POST", cookie: creatorCookie,
+    body: { version_number: 1, model: "Seedance 2.5", platform_id: higgsfield.id, token_count: 1 }
+  });
+  assert.equal(failedGeneration.status, 400);
+  assert.match((await failedGeneration.json()).error, /Upload at least one output file/);
+  assert.equal((await (await request(`/api/plans/${testPlan.id}`, { cookie: creatorCookie })).json()).generations.length, 0);
+  const testGenerationResponse = await request(`/api/plans/${testPlan.id}/generations`, {
+    method: "POST", cookie: creatorCookie,
+    body: { version_number: 1, model: "Seedance 2.5", platform_id: higgsfield.id, token_count: 1,
+      resources: testOutputs.map((output) => ({ resource_id: output.id, role: "Output" })) }
+  });
+  assert.equal(testGenerationResponse.status, 201);
+  const testGenerationPayload = await testGenerationResponse.json();
+  assert.equal(testGenerationPayload.generation.sequence_number, null);
+  assert.equal(testGenerationPayload.generation.shot_number, null);
   const grouped = await request(`/api/generations/${testGenerationPayload.generation.id}`, { method: "PATCH", cookie: creatorCookie,
     body: { resources: testOutputs.map((output) => ({ resource_id: output.id, role: "Output" })) } });
   assert.equal(grouped.status, 200);
@@ -539,7 +546,7 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
       token_count: 12,
       resources: [
         { resource_id: resource.id, role: "Style Reference" },
-        { resource_id: outputResource.id, role: "Reference Image" }
+        { resource_id: outputResource.id, role: "Output" }
       ]
     }
   });

@@ -139,7 +139,7 @@ function generationById(id) {
 
 function mediaPreview(resource, { compact = false } = {}) {
   if (!resource) {
-    return `<div class="media-frame relative ${compact ? "aspect-video" : "min-h-[320px] h-full"}" style="--image-position:${escapeHtml(plan.image_position)}"><div class="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-black/20"></div><div class="absolute inset-x-0 bottom-0 p-5 text-xs text-white/50">No output file linked to this generation.</div></div>`;
+    return `<div class="grid place-items-center bg-[#17191b] text-center text-xs text-zinc-500 ${compact ? "aspect-video" : "min-h-[320px] h-full"}">No output file linked to this generation.</div>`;
   }
   const url = escapeHtml(resource.content_url);
   const name = escapeHtml(resource.original_name);
@@ -479,6 +479,10 @@ document.querySelector("#generationEditorForm")?.addEventListener("submit", asyn
   event.preventDefault();
   if (!validGenerationNumbers()) return;
   const generationId = Number(editorFields.id.value || 0);
+  if (!generationId && ![...editorResourceLinks.values()].includes("Output")) {
+    document.querySelector("#generationUploadStatus").textContent = "Upload at least one output file before saving.";
+    return showToast("Upload at least one output file before saving a generation");
+  }
   const saveButton = document.querySelector("#saveGenerationButton");
   saveButton.disabled = true;
   saveButton.querySelector("span")?.remove();

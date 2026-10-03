@@ -1123,6 +1123,7 @@ export function createGeneration(planId, input, createdBy) {
   const numbers = plan.is_test_plan ? { sequence_number: null, shot_number: null } : matchingShotNumbers(plan, input);
   const fields = generationFields(planId, input, { prompt: plan.prompt, negative_prompt: plan.negative_prompt, model: plan.model });
   const links = generationLinks(planId, input.resources);
+  if (!links.some((link) => link.role === "Output")) throw new Error("Upload at least one output file before saving a generation");
 
   const generationId = db.transaction(() => {
     const result = db.prepare(`
