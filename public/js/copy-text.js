@@ -1,4 +1,36 @@
 (() => {
+  async function copyText(value) {
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(value);
+        return;
+      } catch {
+        // The Clipboard API can be denied on an HTTP server. Use the browser's selection fallback.
+      }
+    }
+    const input = document.createElement("textarea");
+    const previousFocus = document.activeElement;
+    const selection = document.getSelection();
+    const previousRanges = selection ? [...Array(selection.rangeCount)].map((_, index) => selection.getRangeAt(index).cloneRange()) : [];
+    input.value = value;
+    input.setAttribute("readonly", "");
+    input.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none";
+    document.body.append(input);
+    try {
+      input.focus();
+      input.select();
+      if (!document.execCommand("copy")) throw new Error("Copy failed");
+    } finally {
+      input.remove();
+      previousFocus?.focus?.({ preventScroll: true });
+      if (selection) {
+        selection.removeAllRanges();
+        previousRanges.forEach((range) => selection.addRange(range));
+      }
+    }
+  }
+  window.aiHubCopyText = copyText;
+
   function decorate(root = document) {
     const fields = [...root.querySelectorAll?.("textarea, [data-copy-text]") || []];
     for (const field of fields) {
@@ -26,7 +58,7 @@
         event.stopPropagation();
         const value = field instanceof HTMLTextAreaElement ? field.value : field.textContent;
         try {
-          await navigator.clipboard.writeText(value);
+          await copyText(value);
           button.innerHTML = checkIcon;
           button.setAttribute("aria-label", "Copied");
           button.title = "Copied";

@@ -90,7 +90,7 @@ async function approveShot() {
 document.querySelector("#shotStatusSelect")?.addEventListener("change", (event) => updateStatus(event.target.value));
 document.querySelector("#approveShotButton")?.addEventListener("click", approveShot);
 document.querySelector("#copyPromptButton")?.addEventListener("click", async () => {
-  await navigator.clipboard.writeText(plan.prompt || "");
+  await window.aiHubCopyText(plan.prompt || "");
   showToast("Prompt copied");
 });
 

@@ -53,10 +53,10 @@ function promptCard(prompt) {
   return `<article class="rounded-3xl border border-white/[0.07] bg-[#101113] p-5" data-prompt-id="${prompt.id}">
     <div class="flex items-start justify-between gap-3"><div class="min-w-0"><h2 class="text-lg font-semibold text-zinc-100">${escapeHtml(prompt.title)}</h2><div class="mt-1 text-[10px] text-zinc-700">By ${escapeHtml(prompt.created_by_name || "Unknown")} · ${prompt.asset_count || prompt.assets.length} examples</div></div>${permissions.canManageLibraries ? `<button class="delete-prompt icon-button h-8 w-8 shrink-0 text-red-300/55" title="Delete prompt"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ""}</div>
     <div class="mt-3 flex flex-wrap gap-1.5">${prompt.tags.map((tag) => `<span class="rounded-full border border-white/[0.07] px-2 py-1 text-[8px] text-zinc-600">${escapeHtml(tag)}</span>`).join("")}</div>
-    <pre data-copy-text class="mt-4 max-h-44 overflow-hidden whitespace-pre-wrap rounded-2xl border border-white/[0.06] bg-black/20 p-4 font-sans text-xs leading-6 text-zinc-400">${escapeHtml(prompt.prompt)}</pre>
-    ${prompt.negative_prompt ? `<details class="mt-3 text-[10px] text-zinc-600"><summary class="cursor-pointer">Negative prompt</summary><p class="mt-2 whitespace-pre-wrap leading-5">${escapeHtml(prompt.negative_prompt)}</p></details>` : ""}
+    <pre data-copy-text class="mt-4 max-h-44 overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words rounded-2xl border border-white/[0.06] bg-black/20 p-4 font-sans text-xs leading-6 text-zinc-400">${escapeHtml(prompt.prompt)}</pre>
+    ${prompt.negative_prompt ? `<details class="mt-3 text-[10px] text-zinc-600"><summary class="cursor-pointer">Negative prompt</summary><p data-copy-text class="mt-2 max-h-36 overflow-x-hidden overflow-y-auto whitespace-pre-wrap break-words rounded-xl border border-white/[0.06] bg-black/20 p-4 leading-5">${escapeHtml(prompt.negative_prompt)}</p></details>` : ""}
     ${previews ? `<div class="mt-4 grid grid-cols-3 gap-2">${previews}</div>` : `<div class="mt-4 rounded-2xl border border-dashed border-white/[0.08] py-7 text-center text-[10px] text-zinc-700">No example assets yet</div>`}
-    <div class="mt-4 flex items-center gap-2 border-t border-white/[0.06] pt-4"><button class="copy-prompt ghost-button h-9 px-3 text-[10px]"><i data-lucide="copy" class="h-3.5 w-3.5"></i>Copy prompt</button>${permissions.canManageLibraries ? `<button class="add-prompt-assets ghost-button h-9 px-3 text-[10px]"><i data-lucide="paperclip" class="h-3.5 w-3.5"></i>Add examples</button>` : ""}${prompt.assets.length ? `<span class="ml-auto text-[9px] text-zinc-700">${prompt.assets.length} file${prompt.assets.length === 1 ? "" : "s"}</span>` : ""}</div>
+    <div class="mt-4 flex items-center gap-2 border-t border-white/[0.06] pt-4">${permissions.canManageLibraries ? `<button class="add-prompt-assets ghost-button h-9 px-3 text-[10px]"><i data-lucide="paperclip" class="h-3.5 w-3.5"></i>Add examples</button>` : ""}${prompt.assets.length ? `<span class="ml-auto text-[9px] text-zinc-700">${prompt.assets.length} file${prompt.assets.length === 1 ? "" : "s"}</span>` : ""}</div>
   </article>`;
 }
 
@@ -153,11 +153,6 @@ function bindCards() {
   grid.querySelectorAll(".open-asset").forEach((button) => button.addEventListener("click", () => {
     const asset = items.find((item) => item.id === Number(button.closest("[data-asset-id]").dataset.assetId));
     if (asset) openAssetViewer(asset);
-  }));
-  grid.querySelectorAll(".copy-prompt").forEach((button) => button.addEventListener("click", async () => {
-    const prompt = items.find((item) => item.id === Number(button.closest("[data-prompt-id]").dataset.promptId));
-    await navigator.clipboard.writeText(prompt.prompt);
-    showToast("Prompt copied");
   }));
   grid.querySelectorAll(".add-prompt-assets").forEach((button) => button.addEventListener("click", () => {
     activePromptId = Number(button.closest("[data-prompt-id]").dataset.promptId);
