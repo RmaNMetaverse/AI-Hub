@@ -193,7 +193,7 @@
       display: none;
     }
 
-    select:not([multiple]):not([size])::picker(select) {
+    select:not(.compact-filter):not([multiple]):not([size])::picker(select) {
       max-height: min(22rem, 60vh);
       overflow-y: auto;
       border: 1px solid rgba(214, 255, 69, 0.28);
@@ -204,21 +204,21 @@
       color-scheme: dark;
     }
 
-    select:not([multiple]):not([size]) option {
+    select:not(.compact-filter):not([multiple]):not([size]) option {
       border-radius: 0.6rem;
       padding: 0.65rem 0.8rem;
       background: transparent;
       color: #d4d4d8;
     }
 
-    select:not([multiple]):not([size]) option:hover,
-    select:not([multiple]):not([size]) option:focus-visible,
-    select:not([multiple]):not([size]) option:checked {
+    select:not(.compact-filter):not([multiple]):not([size]) option:hover,
+    select:not(.compact-filter):not([multiple]):not([size]) option:focus-visible,
+    select:not(.compact-filter):not([multiple]):not([size]) option:checked {
       background: #244014 !important;
       color: #d6ff45 !important;
     }
 
-    select:not([multiple]):not([size]) option::checkmark {
+    select:not(.compact-filter):not([multiple]):not([size]) option::checkmark {
       color: #d6ff45;
     }
   }
@@ -239,6 +239,12 @@
     padding-top: 0;
     padding-bottom: 0;
     vertical-align: middle;
+  }
+
+  select.compact-filter option {
+    padding: 0.35rem 0.65rem;
+    font-size: 12px;
+    line-height: normal;
   }
 
   .field-label {
