@@ -83,7 +83,7 @@
               </div>
 
               <div class="mt-5 grid gap-4 md:grid-cols-2">
-                <% if (plan.generations.length) { plan.generations.forEach((generation, index) => { const output = generation.resources.find(resource => resource.role === 'Output'); const isSelected = generation.id === plan.selected_generation_id; %>
+                <% if (plan.generations.length) { plan.generations.forEach((generation, index) => { const outputs = generation.resources.filter(resource => resource.role === 'Output'); const output = outputs[0]; const isSelected = generation.id === plan.selected_generation_id; %>
                   <article class="generation-card group relative overflow-hidden rounded-3xl border <%= isSelected ? 'border-acid/25 bg-acid/[0.025]' : 'border-white/[0.07] bg-[#101113]' %>">
                     <button type="button" class="generation-open-button block w-full text-left" data-generation-id="<%= generation.id %>">
                       <div class="relative aspect-video overflow-hidden bg-black/35">
@@ -98,7 +98,7 @@
                           </div>
                           <% if (isSelected) { %><span class="inline-flex items-center gap-1 rounded-full border border-acid/25 bg-black/65 px-2.5 py-1 text-[9px] font-semibold text-acid backdrop-blur"><i data-lucide="badge-check" class="h-3 w-3"></i>Selected final</span><% } else { %><span class="rounded-full bg-black/65 px-2.5 py-1 text-[9px] font-semibold text-zinc-300 backdrop-blur"><%= generation.platform_name || 'Platform not recorded' %></span><% } %>
                         </div>
-                        <div class="absolute bottom-3 left-3 flex flex-wrap gap-1.5"><% generation.resources.slice(0,3).forEach(resource => { %><span class="rounded-full border border-white/10 bg-black/60 px-2 py-1 text-[8px] text-white/60 backdrop-blur"><%= resource.role %></span><% }) %><% if (generation.resources.length > 3) { %><span class="rounded-full border border-white/10 bg-black/60 px-2 py-1 text-[8px] text-white/60 backdrop-blur">+<%= generation.resources.length - 3 %></span><% } %></div>
+                        <div class="absolute bottom-3 left-3 flex flex-wrap gap-1.5"><span class="rounded-full border border-white/10 bg-black/60 px-2 py-1 text-[8px] text-white/70 backdrop-blur"><%= outputs.length %> output<%= outputs.length === 1 ? '' : 's' %></span></div>
                       </div>
                       <div class="p-5">
                         <div class="mb-2 text-xs font-semibold text-acid"><%= plan.is_test_plan ? 'Test plan' : `#Seq ${generation.sequence_number} / #Shot ${generation.shot_number}` %></div>
@@ -208,14 +208,14 @@
           <section class="mt-6 rounded-3xl border border-white/[0.07] bg-black/20 p-4 sm:p-5"><div class="flex flex-col justify-between gap-2 sm:flex-row sm:items-center"><div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">Generation cost estimate</div><p class="mt-1 text-[11px] text-zinc-700">Token price is copied from the platform when this generation is saved and will never change retroactively.</p></div><div id="generationCostPreview" class="text-lg font-semibold text-acid">$0.0000</div></div><div class="mt-4 grid gap-3 sm:grid-cols-3"><label><span class="field-label">Generation platform</span><select id="generationPlatformInput" class="field" required><% generationCatalogs.platforms.forEach(platform => { %><option value="<%= platform.id %>"><%= platform.name %></option><% }) %></select></label><label><span class="field-label">Tokens / credits used</span><input id="generationTokenCountInput" type="number" min="0" step="1" class="field" value="0" /></label><div class="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-3"><div class="text-[9px] uppercase tracking-wider text-zinc-700">Price snapshot</div><div id="generationTokenPricePreview" class="mt-2 text-sm font-semibold text-zinc-300">$0.000000 / token</div><div id="generationPriceNote" class="mt-1 text-[9px] leading-4 text-zinc-700">Current Admin price</div></div></div></section>
 
           <section class="mt-6 rounded-3xl border border-white/[0.07] bg-black/20 p-4 sm:p-5">
-            <div class="flex items-center gap-3"><span class="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-acid/15 bg-acid/[0.06] text-acid"><i data-lucide="clapperboard" class="h-5 w-5"></i></span><div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-acid">Generation output</div><h3 class="mt-0.5 text-base font-semibold text-zinc-100">Upload the result for this version</h3></div></div>
-            <p class="mt-3 text-[11px] leading-5 text-zinc-500">Add the image, video, audio, or other file produced by this generation. Plan references stay in the Assets tab.</p>
+            <div class="flex items-center gap-3"><span class="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-acid/15 bg-acid/[0.06] text-acid"><i data-lucide="clapperboard" class="h-5 w-5"></i></span><div><div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-acid">Generation outputs</div><h3 class="mt-0.5 text-base font-semibold text-zinc-100">Upload results for this version</h3></div></div>
+            <p class="mt-3 text-[11px] leading-5 text-zinc-500">Select multiple images or videos generated from the same prompt. Each file stays linked to this one generation.</p>
             <label id="generationOutputDropZone" data-file-drop-zone for="generationUploadInput" tabindex="0" class="group mt-4 flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-[22px] border border-dashed border-acid/20 bg-[radial-gradient(circle_at_50%_0%,rgba(214,255,69,0.075),transparent_68%)] px-5 py-6 text-center transition hover:border-acid/45 hover:bg-acid/[0.035] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acid/40">
-              <input id="generationUploadInput" type="file" class="hidden" aria-label="Upload generation output" />
+              <input id="generationUploadInput" type="file" multiple class="hidden" aria-label="Upload generation outputs" />
               <span class="grid h-12 w-12 place-items-center rounded-2xl border border-acid/20 bg-acid/10 text-acid shadow-[0_0_24px_rgba(214,255,69,0.08)] transition group-hover:scale-105"><i data-lucide="upload-cloud" class="h-5 w-5"></i></span>
               <span class="mt-4 text-sm font-semibold text-zinc-100">Drop your output here</span>
               <span class="mt-1 text-[11px] text-zinc-500">or <span class="font-semibold text-acid">browse your computer</span></span>
-              <span class="mt-3 text-[10px] text-zinc-700">One output file · up to <%= formatBytes(maxUploadBytes) %></span>
+              <span class="mt-3 text-[10px] text-zinc-700">Multiple output files · up to <%= formatBytes(maxUploadBytes) %> each</span>
             </label>
             <div id="generationSelectedOutput" class="mt-4 hidden" aria-live="polite"></div>
             <p id="generationUploadStatus" class="mt-3 text-[11px] text-zinc-500" role="status">Your uploaded file will be linked when you save the generation.</p>

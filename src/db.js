@@ -1154,7 +1154,8 @@ export function createGeneration(planId, input, createdBy) {
 export function updateGeneration(id, input) {
   const current = db.prepare("SELECT * FROM generations WHERE id = ?").get(id);
   if (!current) throw new Error("Generation not found");
-  matchingShotNumbers(current, input, { partial: true });
+  const plan = db.prepare("SELECT * FROM ai_plans WHERE id = ?").get(current.plan_id);
+  matchingShotNumbers(plan, input, { partial: true });
   if (input.plan_id !== undefined && Number(input.plan_id) !== current.plan_id) throw new Error("Generation shot is locked");
   const fields = generationFields(current.plan_id, input, current);
   const links = input.resources === undefined ? null : generationLinks(current.plan_id, input.resources, id);

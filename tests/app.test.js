@@ -271,6 +271,22 @@ test("AI Hub authentication, permissions, plans, and shot pages work together", 
   const testGenerationPayload = await testGenerationResponse.json();
   assert.equal(testGenerationPayload.generation.sequence_number, null);
   assert.equal(testGenerationPayload.generation.shot_number, null);
+  const testOutputs = [];
+  for (const name of ["flow-option-a.mp4", "flow-option-b.mp4"]) {
+    const upload = new FormData();
+    upload.append("category", "Generation");
+    upload.append("asset_role", "Output");
+    upload.append("file", new Blob([new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112])], { type: "video/mp4" }), name);
+    const result = await fetch(`${origin}/api/plans/${testPlan.id}/resources`, { method: "POST", headers: { cookie: creatorCookie }, body: upload });
+    assert.equal(result.status, 201);
+    testOutputs.push(await result.json());
+  }
+  const grouped = await request(`/api/generations/${testGenerationPayload.generation.id}`, { method: "PATCH", cookie: creatorCookie,
+    body: { resources: testOutputs.map((output) => ({ resource_id: output.id, role: "Output" })) } });
+  assert.equal(grouped.status, 200);
+  const groupedPlan = await request(`/api/plans/${testPlan.id}`, { cookie: creatorCookie });
+  const groupedGeneration = (await groupedPlan.json()).generations.find((item) => item.id === testGenerationPayload.generation.id);
+  assert.deepEqual(groupedGeneration.resources.filter((item) => item.role === "Output").map((item) => item.original_name).sort(), ["flow-option-a.mp4", "flow-option-b.mp4"]);
   assert.equal((await request(`/api/plans/${plan.id}/assignees`, { method: "PUT", cookie: creatorCookie, body: { user_ids: [creatorUserId] } })).status, 403);
   const availableAssignees = await request("/api/assignment-users", { cookie: adminCookie });
   assert.equal(availableAssignees.status, 200);

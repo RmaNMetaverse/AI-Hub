@@ -209,7 +209,8 @@ function openGenerationDetail(id) {
   const generation = generationById(id);
   if (!generation) return;
   activeGenerationId = generation.id;
-  const output = generation.resources.find((resource) => resource.role === "Output");
+  const outputs = generation.resources.filter((resource) => resource.role === "Output");
+  const output = outputs[0];
   const inputs = generation.resources.filter((resource) => resource.role !== "Output");
   const isApproved = generation.status === "Approved";
   document.querySelector("#generationModalTitle").innerHTML = `${escapeHtml(generation.version_label)} <span class="status-pill ml-2 ${isApproved ? 'border-lime-400/25 bg-lime-400/10 text-lime-300' : 'border-amber-400/25 bg-amber-400/10 text-amber-300'}">${escapeHtml(generation.status || 'WIP')}</span>`;
@@ -224,7 +225,8 @@ function openGenerationDetail(id) {
       </aside>
     </div>
     <div class="border-t border-white/[0.07] p-5 sm:p-6">
-      <div class="grid gap-5 lg:grid-cols-2"><section><div class="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Prompt</div><div class="mt-3 whitespace-pre-wrap rounded-2xl border border-white/[0.06] bg-black/20 p-4 text-xs leading-6 text-zinc-300">${escapeHtml(generation.prompt || "No prompt recorded.")}</div>${generation.negative_prompt ? `<div class="mt-4 text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Negative prompt</div><div class="mt-3 whitespace-pre-wrap rounded-2xl border border-white/[0.06] bg-black/15 p-4 text-[11px] leading-5 text-zinc-500">${escapeHtml(generation.negative_prompt)}</div>` : ""}</section><section><div class="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Notes</div><div class="mt-3 whitespace-pre-wrap rounded-2xl border border-white/[0.06] bg-black/20 p-4 text-xs leading-6 text-zinc-400">${escapeHtml(generation.notes || "No notes recorded.")}</div></section></div>
+      ${outputs.length ? `<section class="mb-6"><div class="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Output files · ${outputs.length}</div><div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${outputs.map((resource) => `<article class="overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02]"><button type="button" data-generation-media-id="${resource.id}" class="block w-full text-left" aria-label="View ${escapeHtml(resource.original_name)}"><div class="aspect-video overflow-hidden bg-black/40">${resource.kind === "image" ? `<img src="${escapeHtml(resource.content_url)}" alt="" loading="lazy" class="h-full w-full object-cover" />` : resource.kind === "video" ? `<video src="${escapeHtml(resource.content_url)}" muted preload="metadata" class="h-full w-full object-cover"></video>` : `<div class="grid h-full place-items-center text-zinc-600">Output file</div>`}</div></button><div class="flex items-center gap-2 p-3"><span class="min-w-0 flex-1 truncate text-xs text-zinc-300" title="${escapeHtml(resource.original_name)}">${escapeHtml(resource.original_name)}</span><a href="${escapeHtml(resource.download_url)}" class="ghost-button h-8 px-2 text-[10px]" aria-label="Download ${escapeHtml(resource.original_name)}">Download</a>${permissions.canEditPlans ? `<button type="button" data-delete-generation-output="${resource.id}" class="ghost-button h-8 px-2 text-[10px] text-red-300" aria-label="Delete ${escapeHtml(resource.original_name)}">Delete</button>` : ""}</div></article>`).join("")}</div></section>` : ""}
+      <div class="grid gap-5 lg:grid-cols-2"><section><div class="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Prompt</div><div data-copy-text class="mt-3 whitespace-pre-wrap rounded-2xl border border-white/[0.06] bg-black/20 p-4 text-xs leading-6 text-zinc-300">${escapeHtml(generation.prompt || "No prompt recorded.")}</div>${generation.negative_prompt ? `<div class="mt-4 text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Negative prompt</div><div data-copy-text class="mt-3 whitespace-pre-wrap rounded-2xl border border-white/[0.06] bg-black/15 p-4 text-[11px] leading-5 text-zinc-500">${escapeHtml(generation.negative_prompt)}</div>` : ""}</section><section><div class="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Notes</div><div data-copy-text class="mt-3 whitespace-pre-wrap rounded-2xl border border-white/[0.06] bg-black/20 p-4 text-xs leading-6 text-zinc-400">${escapeHtml(generation.notes || "No notes recorded.")}</div></section></div>
       ${inputs.length ? `<section class="mt-6"><div class="flex items-center justify-between"><div><div class="text-[9px] font-semibold uppercase tracking-[0.14em] text-zinc-600">Generation resources</div><div class="mt-1 text-[11px] text-zinc-700">Only inputs linked to this version are shown.</div></div><span class="rounded-full border border-white/[0.08] px-2.5 py-1 text-[9px] text-zinc-600">${inputs.length} linked</span></div><div class="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">${inputs.map(generationResourceCard).join("")}</div></section>` : `<div class="mt-6 rounded-2xl border border-dashed border-white/10 py-10 text-center text-xs text-zinc-700">No optional input resources are linked to this generation.</div>`}
     </div>`;
 
@@ -249,6 +251,11 @@ document.querySelectorAll(".generation-open-button").forEach((button) => button.
   openGenerationDetail(button.dataset.generationId);
 }));
 document.addEventListener("click", (event) => {
+  const deleteButton = event.target.closest("[data-delete-generation-output]");
+  if (deleteButton) {
+    deleteGenerationOutput({ dataset: { resourceId: deleteButton.dataset.deleteGenerationOutput }, disabled: false });
+    return;
+  }
   const button = event.target.closest("[data-generation-media-id]");
   if (!button) return;
   const resource = plan.resources.find((item) => item.id === Number(button.dataset.generationMediaId));
@@ -373,18 +380,13 @@ function renderPlatformOptions(generation) {
 
 function renderSelectedOutput() {
   const target = document.querySelector("#generationSelectedOutput");
-  const outputId = [...editorResourceLinks.entries()].find(([, role]) => role === "Output")?.[0];
-  const resource = plan.resources.find((item) => item.id === outputId);
-  target.classList.toggle("hidden", !resource);
-  if (!resource) {
+  const resources = [...editorResourceLinks.entries()].filter(([, role]) => role === "Output").map(([id]) => plan.resources.find((item) => item.id === id)).filter(Boolean);
+  target.classList.toggle("hidden", !resources.length);
+  if (!resources.length) {
     target.replaceChildren();
     return;
   }
-  const icon = resource.kind === "image" ? "image" : resource.kind === "video" ? "file-video-2" : resource.kind === "audio" ? "audio-lines" : "file-check-2";
-  const preview = resource.kind === "image" && !String(resource.mime_type).includes("svg")
-    ? `<img src="${escapeHtml(resource.content_url)}" alt="" class="h-full w-full object-cover" />`
-    : `<i data-lucide="${icon}" class="h-5 w-5"></i>`;
-  target.innerHTML = `<div class="flex min-w-0 items-center gap-3 rounded-2xl border border-acid/20 bg-acid/[0.045] p-3"><span class="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-xl bg-black/30 text-acid">${preview}</span><span class="min-w-0 flex-1"><span class="block truncate text-xs font-semibold text-zinc-100" title="${escapeHtml(resource.original_name)}">${escapeHtml(resource.original_name)}</span><span class="mt-1 block text-[10px] text-zinc-500">${formatBytes(resource.size_bytes)} · ${escapeHtml(resource.kind)} output</span></span><span class="rounded-full border border-acid/20 bg-acid/10 px-2.5 py-1 text-[9px] font-semibold uppercase tracking-wider text-acid">Selected</span></div>`;
+  target.innerHTML = `<div class="mb-2 text-xs text-acid">${resources.length} output file${resources.length === 1 ? "" : "s"} selected</div>${resources.map((resource) => `<div class="mb-2 flex min-w-0 items-center gap-3 rounded-2xl border border-acid/20 bg-acid/[0.045] p-3"><span class="min-w-0 flex-1 truncate text-xs text-zinc-100">${escapeHtml(resource.original_name)}</span><span class="text-[10px] text-zinc-500">${formatBytes(resource.size_bytes)}</span><button type="button" data-unlink-output="${resource.id}" class="text-xs text-red-300" aria-label="Remove ${escapeHtml(resource.original_name)} from generation">Remove</button></div>`).join("")}`;
   lucide.createIcons();
 }
 
@@ -428,8 +430,8 @@ function fillEditor(generation = null) {
   editorResourceLinks = new Map((generation?.resources || []).map((resource) => [resource.id, resource.role]));
   document.querySelector("#generationEditorTitle").textContent = generation ? `Edit ${generation.version_label}` : "Add generation";
   document.querySelector("#generationUploadStatus").textContent = generation?.resources.some((resource) => resource.role === "Output")
-    ? "Drop a new file to replace this output, then save the generation."
-    : "Your uploaded file will be linked when you save the generation.";
+    ? "Add more output files, or remove individual files below before saving."
+    : "Select or drop multiple files; all outputs will share this generation's prompt.";
   renderSelectedOutput();
   updateCostPreview();
 }
@@ -540,7 +542,6 @@ generationUploadInput?.addEventListener("change", async () => {
       const resource = await uploadResource(file, "Generation", `Uploaded for ${versionLabel}`, (percentage) => { status.textContent = `Uploading ${file.name}: ${percentage}%`; }, plan, "Output");
       resource.generation_usage_count = 0;
       plan.resources.unshift(resource);
-      for (const [otherId, otherRole] of editorResourceLinks.entries()) if (otherRole === "Output") editorResourceLinks.delete(otherId);
       editorResourceLinks.set(resource.id, "Output");
       renderSelectedOutput();
       uploaded += 1;
@@ -548,7 +549,13 @@ generationUploadInput?.addEventListener("change", async () => {
       showToast(error.message);
     }
   }
-  status.textContent = uploaded ? "Output uploaded. Save the generation to link it to this version." : "No file was uploaded.";
+  status.textContent = uploaded ? `${uploaded} output file${uploaded === 1 ? "" : "s"} uploaded. Save the generation to link them.` : "No file was uploaded.";
+});
+document.querySelector("#generationSelectedOutput")?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-unlink-output]");
+  if (!button) return;
+  editorResourceLinks.delete(Number(button.dataset.unlinkOutput));
+  renderSelectedOutput();
 });
 
 const resourceUploadForm = document.querySelector("#resourceUploadForm");
