@@ -247,7 +247,8 @@ els.form.addEventListener("submit", async (event) => {
     const result = await response.json();
     if (!response.ok) return showToast(result.error || "Could not create plan");
 
-    const refreshedResponse = await fetch(result.is_test_plan ? "/api/plans" : `/api/plans?sequence_number=${result.sequence_number}&shot_number=${result.shot_number}`);
+    const planFilters = new URLSearchParams({ sequence_number: result.sequence_number, shot_number: result.shot_number });
+    const refreshedResponse = await fetch(result.is_test_plan ? "/api/plans" : `/api/plans?${planFilters}`);
     const refreshedPlans = refreshedResponse.ok ? await refreshedResponse.json() : [];
     const refreshed = refreshedPlans.find((plan) => plan.id === result.id) || result;
     state.plans = [refreshed, ...state.plans.filter((plan) => plan.id !== result.id)];

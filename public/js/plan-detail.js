@@ -461,7 +461,7 @@ document.querySelector("#generationOutputDropZone")?.addEventListener("keydown",
 
 function generationPayload() {
   return {
-    sequence_number: plan.is_test_plan ? null : Number(editorFields.sequence_number.value),
+    sequence_number: plan.is_test_plan ? null : editorFields.sequence_number.value.trim(),
     shot_number: plan.is_test_plan ? null : Number(editorFields.shot_number.value),
     version_number: Number(editorFields.version_number.value),
     status: editorFields.status?.value || "WIP",
@@ -503,7 +503,7 @@ document.querySelector("#generationEditorForm")?.addEventListener("submit", asyn
 function validGenerationNumbers() {
   if (!document.querySelector("#generationEditorForm").reportValidity()) return false;
   if (plan.is_test_plan) return true;
-  if (Number(editorFields.sequence_number.value) !== plan.sequence_number || Number(editorFields.shot_number.value) !== plan.shot_number) {
+  if (editorFields.sequence_number.value.trim() !== String(plan.sequence_number) || Number(editorFields.shot_number.value) !== plan.shot_number) {
     showToast(`Use this shot's locked numbers: #Seq ${plan.sequence_number} / #Shot ${plan.shot_number}`);
     return false;
   }

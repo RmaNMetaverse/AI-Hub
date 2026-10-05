@@ -150,9 +150,9 @@
         </div>
         <form id="newPlanForm" class="mt-7 grid gap-5 sm:grid-cols-2">
           <div id="numberedPlanFields" class="contents">
-            <label><span class="field-label">#Seq · Sequence number *</span><input name="sequence_number" type="number" min="1" max="1000000" step="1" class="field text-2xl" required /></label>
+            <label><span class="field-label">#Seq · Sequence *</span><input name="sequence_number" type="text" maxlength="100" class="field text-2xl" placeholder="e.g. 12, Seq-A_@" required /></label>
             <label><span class="field-label">#Shot · Plan / Shot number *</span><input name="shot_number" type="number" min="1" max="1000000" step="1" class="field text-2xl" required /></label>
-            <p class="text-xs text-zinc-500 sm:col-span-2">Both numbers are required and locked after creation. Every generation and uploaded file belongs to this numbered shot.</p>
+            <p class="text-xs text-zinc-500 sm:col-span-2">#Seq can be a number or a label such as Seq-A_@!. #Shot stays numeric. Both identifiers are locked after creation.</p>
           </div>
           <label class="flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-black/20 p-4 sm:col-span-2"><input id="isTestPlanInput" name="is_test_plan" type="checkbox" class="h-4 w-4 accent-lime-300" /><span><span class="block text-sm font-semibold text-zinc-200">This is a test plan</span><span class="mt-1 block text-[11px] text-zinc-600">Test plans use a title only and do not need sequence or shot numbers.</span></span></label>
           <label class="sm:col-span-2"><span class="field-label">Plan title *</span><input name="title" class="field" placeholder="e.g. Signal discovery" required /></label>

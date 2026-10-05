@@ -14,7 +14,7 @@
     return values;
   };
   const matches = (plan) => form.checkValidity()
-    && (!sequence.value || plan.sequence_number === Number(sequence.value))
+    && (!sequence.value || String(plan.sequence_number) === sequence.value.trim())
     && (!shot.value || plan.shot_number === Number(shot.value));
   window.shotNavigation = { matches, query: () => params().toString() };
   function update() {

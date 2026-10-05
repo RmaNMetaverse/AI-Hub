@@ -1702,7 +1702,10 @@ export function createPlan(input) {
   if (!title) throw new Error("Title is required");
   const isTestPlan = input.is_test_plan === true || input.is_test_plan === 1 || ["true", "1", "on"].includes(String(input.is_test_plan || "").toLowerCase());
   const numbers = isTestPlan ? { sequence_number: null, shot_number: null } : shotNumbers(input);
-  const shotCode = isTestPlan ? "TEST" : `SQ${String(numbers.sequence_number).padStart(2, "0")}-SH${String(numbers.shot_number).padStart(3, "0")}`;
+  const sequenceCode = typeof numbers.sequence_number === "number"
+    ? String(numbers.sequence_number).padStart(2, "0")
+    : numbers.sequence_number;
+  const shotCode = isTestPlan ? "TEST" : `SQ${sequenceCode}-SH${String(numbers.shot_number).padStart(3, "0")}`;
 
   const project = db.prepare("SELECT id FROM projects ORDER BY id LIMIT 1").get();
   const status = allowedStatuses.has(input.status) ? input.status : "WIP";

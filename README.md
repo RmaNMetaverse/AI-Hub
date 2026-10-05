@@ -51,11 +51,11 @@ The Docker workflow remains the source of truth for checks, tests, and productio
 ## Current features
 
 - One flat grid of all shots, newest generation first (creation date for ungenerated shots)
-- Prominent #Seq and #Shot number filters across the grid and shot workspace; either or both can be used
+- Prominent #Seq and #Shot filters across the grid and shot workspace; #Seq accepts numbers or text labels, while #Shot stays numeric
 - Dedicated full-page workspace and URL for every shot
 - Previous and next shot navigation
 - Search and status filtering combined with the number filters
-- Persistent AI Plan creation with mandatory positive #Seq and #Shot numbers
+- Persistent AI Plan creation with a required #Seq identifier and positive numeric #Shot
 - Immutable shot numbers on plans and generations; uploads must match their shot
 - Full-page shot workspace with brief, prompt, quality, generations, issues, and next action
 - Selected-generation final preview with image, video, audio, or file output
