@@ -986,6 +986,47 @@ async function downloadPlanArchive(request, response, kind) {
 router.get("/plans/:id/generations.zip", (request, response) => downloadPlanArchive(request, response, "generations"));
 router.get("/plans/:id/assets.zip", (request, response) => downloadPlanArchive(request, response, "assets"));
 
+async function downloadGenerationVideos(request, response) {
+  const planId = Number(request.params.id);
+  const generationId = Number(request.params.generationId);
+  if (!Number.isSafeInteger(planId) || planId < 1 || !Number.isSafeInteger(generationId) || generationId < 1) {
+    return response.status(404).json({ error: "Generation not found" });
+  }
+  const plan = getPlan(planId);
+  const generation = plan?.generations.find((item) => item.id === generationId);
+  if (!generation) return response.status(404).json({ error: "Generation not found" });
+
+  const videos = generation.resources.filter((resource) => resource.role === "Output" && resource.kind === "video");
+  if (!videos.length) return response.status(404).json({ error: "This generation has no video outputs to download" });
+
+  const files = [];
+  try {
+    for (const resource of videos) {
+      const filePath = absoluteStoragePath(resource.storage_key);
+      const stat = await fsp.stat(filePath);
+      if (!stat.isFile()) throw new Error("Stored file is not available");
+      const safeName = safeOriginalName(resource.original_name).replace(/[\\/]/g, "_").replace(/^\.+$/, "file");
+      files.push({ filePath, entryName: `${resource.id}-${safeName}` });
+    }
+  } catch (_error) {
+    return response.status(409).json({ error: "One or more stored videos are missing. The ZIP could not be created." });
+  }
+
+  const archive = new ZipArchive({ forceZip64: true, zlib: { level: 1 } });
+  const archiveName = `Seq-${plan.sequence_number ?? "Test"}_Shot-${plan.shot_number ?? plan.id}-v${generation.version_number || generation.id}-videos.zip`;
+  response.setHeader("Content-Type", "application/zip");
+  response.setHeader("Content-Disposition", contentDisposition(archiveName, false));
+  response.setHeader("Cache-Control", "private, no-store");
+  archive.on("error", () => response.destroy());
+  response.on("close", () => { if (!response.writableFinished) archive.abort(); });
+  archive.pipe(response);
+  files.forEach(({ filePath, entryName }) => archive.file(filePath, { name: entryName }));
+  try { await archive.finalize(); }
+  catch (_error) { response.destroy(); }
+}
+
+router.get("/plans/:id/generations/:generationId/videos.zip", downloadGenerationVideos);
+
 router.get("/plan-covers/:id/content", async (request, response) => {
   const cover = getPlanCover(Number(request.params.id));
   if (!cover) return response.status(404).json({ error: "Plan cover not found" });
