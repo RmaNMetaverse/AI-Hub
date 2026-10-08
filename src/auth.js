@@ -14,6 +14,7 @@ import {
 const scrypt = promisify(crypto.scrypt);
 const SESSION_COOKIE = "ai_hub_session";
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+export const DEFAULT_ACCOUNT_PASSWORD = "AIHub@12345";
 
 export const ROLE_DEFINITIONS = {
   Admin: "Workspace and account management, excluding production approvals.",

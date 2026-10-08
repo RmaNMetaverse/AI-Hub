@@ -20,6 +20,7 @@ import {
   createResource,
   createWorkspaceRole,
   deleteGeneration,
+  deleteAccount,
   deleteLibraryAsset,
   deletePlan,
   deletePlanCover,
@@ -77,6 +78,7 @@ import {
   normalizeUsername,
   permissionsFor,
   resetAccountPassword,
+  DEFAULT_ACCOUNT_PASSWORD,
   validateUsername
 } from "./src/auth.js";
 import {
@@ -310,7 +312,7 @@ function requirePermission(permission) {
 
 function requireAdmin(request, response, next) {
   if (request.user?.role === "Admin") return next();
-  response.status(403).json({ error: "Only an Admin can reset account passwords" });
+  response.status(403).json({ error: "Only an Admin can perform this account action" });
 }
 
 router.get("/health", (_request, response) => {
@@ -1238,7 +1240,8 @@ router.get("/library-asset-files/:id/content", async (request, response) => {
 });
 
 router.get("/api/users", requirePermission("canManageAccounts"), (_request, response) => {
-  response.json({ users: listAccounts(), roles: listWorkspaceRoles() });
+  response.json({ users: listAccounts(), roles: listWorkspaceRoles(),
+    ...(_request.user.role === "Admin" ? { default_password: DEFAULT_ACCOUNT_PASSWORD } : {}) });
 });
 
 router.post("/api/users", requirePermission("canManageAccounts"), (request, response) => {
@@ -1273,12 +1276,28 @@ router.patch("/api/users/:id", requirePermission("canManageAccounts"), (request,
 
 router.post("/api/users/:id/password", requireAdmin, async (request, response) => {
   try {
-    const password = String(request.body.password || "");
+    const mode = request.body.mode || "custom";
+    if (!["default", "custom"].includes(mode)) throw new Error("Select default or custom password");
+    const password = mode === "default" ? DEFAULT_ACCOUNT_PASSWORD : String(request.body.password || "");
     const confirmation = String(request.body.confirmation || "");
-    if (password !== confirmation) throw new Error("Passwords do not match");
+    if (mode === "custom" && password !== confirmation) throw new Error("Passwords do not match");
     const user = await resetAccountPassword(Number(request.params.id), password);
     recordActivity(request.user, "reset_user_password", "user", user.id, `Reset password for ${user.display_name}`);
     response.json(user);
+  } catch (error) {
+    response.status(400).json({ error: error.message });
+  }
+});
+
+router.delete("/api/users/:id", requireAdmin, async (request, response) => {
+  try {
+    const id = Number(request.params.id);
+    if (!Number.isSafeInteger(id) || id < 1) throw new Error("Account not found");
+    if (id === request.user.id) throw new Error("You cannot delete your own account");
+    const user = deleteAccount(id);
+    if (user.avatar_storage_key) await removeStoredFile(user.avatar_storage_key).catch(() => {});
+    recordActivity(request.user, "deleted_user", "user", id, `Deleted account for ${user.display_name} · @${user.username}`);
+    response.status(204).end();
   } catch (error) {
     response.status(400).json({ error: error.message });
   }

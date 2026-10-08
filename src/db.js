@@ -1796,7 +1796,7 @@ export function setUserPassword(id, passwordHash) {
 
 export function resetUserPassword(id, passwordHash) {
   const current = db.prepare("SELECT * FROM users WHERE id = ?").get(id);
-  if (!current || !current.active) throw new Error("Active account not found");
+  if (!current) throw new Error("Account not found");
   db.transaction(() => {
     db.prepare(`
       UPDATE users
@@ -1880,4 +1880,15 @@ export function updateAccount(id, { role, active }) {
   if (!nextActive) db.prepare("DELETE FROM sessions WHERE user_id = ?").run(id);
 
   return listAccounts().find((user) => user.id === id);
+}
+
+export function deleteAccount(id) {
+  return db.transaction(() => {
+    const user = listAccounts().find((account) => account.id === id);
+    if (!user) throw new Error("Account not found");
+    if (user.active) throw new Error("Disable this account before deleting it");
+    const avatar = userAvatar(id);
+    db.prepare("DELETE FROM users WHERE id = ?").run(id);
+    return { ...user, avatar_storage_key: avatar?.avatar_storage_key };
+  })();
 }

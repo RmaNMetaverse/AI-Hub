@@ -456,6 +456,7 @@ async function loadUsers() {
   const payload = await response.json();
   if (!response.ok) return showToast(payload.error || "Could not load accounts");
   accountUsers = payload.users;
+  state.defaultAccountPassword = payload.default_password;
   state.workspaceRoles = payload.roles;
   state.roleDefinitions = Object.fromEntries(payload.roles.map((role) => [role.name, role.description]));
   refreshRoleSelect();
@@ -484,8 +485,9 @@ function renderUsers() {
       <div class="mt-3 flex items-center gap-2 border-t border-white/[0.06] pt-3">
         <select class="user-role h-8 flex-1 rounded-lg border border-white/[0.08] bg-black/20 px-2 text-[11px] text-zinc-400 outline-none" aria-label="Role for ${escapeHtml(user.display_name)}">${state.workspaceRoles.map((role) => `<option ${role.name === user.role ? "selected" : ""}>${escapeHtml(role.name)}</option>`).join("")}</select>
         <button class="toggle-user h-8 rounded-lg border border-white/[0.08] px-3 text-[10px] font-semibold ${user.active ? "text-zinc-500 hover:text-red-300" : "text-acid"}">${user.active ? "Disable" : "Enable"}</button>
+        ${!user.active && state.currentUser?.role === "Admin" && state.currentUser.id !== user.id ? `<button type="button" class="delete-user h-8 rounded-lg border border-red-300/20 px-3 text-[10px] font-semibold text-red-300 transition hover:bg-red-300/10">Delete</button>` : ""}
       </div>
-      ${state.currentUser?.role === "Admin" && state.currentUser.id !== user.id && user.active ? `<div class="mt-2"><button type="button" class="open-password-reset text-[10px] text-zinc-600 transition hover:text-acid">Reset forgotten password</button><form class="password-reset-form mt-3 hidden space-y-2 rounded-xl border border-amber-300/10 bg-amber-300/[0.025] p-3"><label><span class="field-label">New password</span><input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password" class="field h-9 py-0 text-xs" required /></label><label><span class="field-label">Confirm password</span><input name="confirmation" type="password" minlength="10" maxlength="128" autocomplete="new-password" class="field h-9 py-0 text-xs" required /></label><div class="flex items-center justify-end gap-2"><button type="button" class="cancel-password-reset text-[10px] text-zinc-600 hover:text-white">Cancel</button><button type="submit" class="ghost-button h-8 px-3 text-[10px]">Save password</button></div></form></div>` : ""}
+      ${state.currentUser?.role === "Admin" && state.currentUser.id !== user.id ? `<div class="mt-2"><button type="button" class="open-password-reset text-[11px] font-semibold text-zinc-400 transition hover:text-acid">Reset password</button><form class="password-reset-form mt-3 hidden space-y-3 rounded-xl border border-amber-300/10 bg-amber-300/[0.025] p-3"><label class="block"><span class="field-label">Password choice</span><select name="mode" class="field h-9 py-0 text-xs"><option value="default">Use default password</option><option value="custom">Set a custom password</option></select></label><p class="default-password-info text-xs text-zinc-400">Default password: <code class="font-semibold text-acid">${escapeHtml(state.defaultAccountPassword)}</code></p><div class="custom-password-fields hidden space-y-3"><label class="block"><span class="field-label">New password</span><input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password" class="field h-9 py-0 text-xs" disabled /></label><label class="block"><span class="field-label">Confirm password</span><input name="confirmation" type="password" minlength="10" maxlength="128" autocomplete="new-password" class="field h-9 py-0 text-xs" disabled /></label></div><p class="text-[10px] leading-4 text-zinc-500">Resetting signs out existing sessions.${user.active ? "" : " This account remains disabled until you enable it."}</p><div class="flex items-center justify-end gap-2"><button type="button" class="cancel-password-reset text-[10px] text-zinc-600 hover:text-white">Cancel</button><button type="submit" class="ghost-button h-8 px-3 text-[10px]">Reset password</button></div></form></div>` : ""}
     </article>`).join("");
 
   list.querySelectorAll(".user-role").forEach((select) => select.addEventListener("change", async () => {
@@ -497,10 +499,42 @@ function renderUsers() {
     const user = accountUsers.find((item) => item.id === id);
     await updateUserAccount(id, { active: !user.active });
   }));
+  list.querySelectorAll(".delete-user").forEach((button) => button.addEventListener("click", async () => {
+    const id = Number(button.closest("[data-user-id]").dataset.userId);
+    const user = accountUsers.find((item) => item.id === id);
+    if (!user || user.active || !window.confirm(`Permanently delete @${user.username}? Their production files and activity history will be retained.`)) return;
+    button.disabled = true;
+    try {
+      const response = await fetch(`/api/users/${id}`, { method: "DELETE" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        return showToast(payload.error || "Could not delete account");
+      }
+      showToast(`Account @${user.username} deleted`);
+      state.plans = state.plans.map((plan) => ({ ...plan, assignees: (plan.assignees || []).filter((assignee) => assignee.id !== id) }));
+      els.assignmentFilter?.querySelector(`option[value="user:${id}"]`)?.remove();
+      if (state.assignment === `user:${id}`) {
+        state.assignment = "all";
+        if (els.assignmentFilter) els.assignmentFilter.value = "all";
+      }
+      render();
+      await loadUsers();
+    } catch {
+      showToast("Could not delete account. Check your connection and try again.");
+    } finally { button.disabled = false; }
+  }));
+  list.querySelectorAll(".password-reset-form [name='mode']").forEach((select) => select.addEventListener("change", () => {
+    const form = select.closest("form");
+    const custom = select.value === "custom";
+    form.querySelector(".custom-password-fields").classList.toggle("hidden", !custom);
+    form.querySelector(".default-password-info").classList.toggle("hidden", custom);
+    form.querySelectorAll("input").forEach((input) => { input.disabled = !custom; input.required = custom; });
+    if (custom) form.elements.password.focus();
+  }));
   list.querySelectorAll(".open-password-reset").forEach((button) => button.addEventListener("click", () => {
     button.closest("[data-user-id]").querySelector(".password-reset-form").classList.remove("hidden");
     button.classList.add("hidden");
-    button.closest("[data-user-id]").querySelector("input[name='password']").focus();
+    button.closest("[data-user-id]").querySelector("select[name='mode']").focus();
   }));
   list.querySelectorAll(".cancel-password-reset").forEach((button) => button.addEventListener("click", () => {
     const card = button.closest("[data-user-id]");
@@ -513,19 +547,22 @@ function renderUsers() {
     const user = accountUsers.find((item) => item.id === Number(card.dataset.userId));
     const button = form.querySelector("button[type='submit']");
     button.disabled = true;
-    const response = await fetch(`/api/users/${user.id}/password`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(Object.fromEntries(new FormData(form)))
-    });
-    const payload = await response.json().catch(() => ({}));
-    button.disabled = false;
-    if (!response.ok) return showToast(payload.error || "Could not reset the password");
-    form.reset();
-    form.classList.add("hidden");
-    card.querySelector(".open-password-reset").classList.remove("hidden");
-    showToast(`Password reset for @${user.username}; their active sessions were signed out`);
-    await loadUsers();
+    try {
+      const response = await fetch(`/api/users/${user.id}/password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.fromEntries(new FormData(form)))
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) return showToast(payload.error || "Could not reset the password");
+      form.reset();
+      form.classList.add("hidden");
+      card.querySelector(".open-password-reset").classList.remove("hidden");
+      showToast(`Password reset for @${user.username}; their active sessions were signed out`);
+      await loadUsers();
+    } catch {
+      showToast("Could not reset the password. Check your connection and try again.");
+    } finally { button.disabled = false; }
   }));
 }
 

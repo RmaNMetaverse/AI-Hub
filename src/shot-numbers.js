@@ -101,7 +101,7 @@ export function migrateShotNumbers(db) {
       WHEN ${hasTestFlag
         ? "(COALESCE(NEW.is_test_plan, 0) = 0 AND ((typeof(NEW.sequence_number) = 'integer' AND NEW.sequence_number NOT BETWEEN 1 AND 1000000) OR (typeof(NEW.sequence_number) = 'text' AND length(trim(NEW.sequence_number)) NOT BETWEEN 1 AND 100) OR typeof(NEW.sequence_number) NOT IN ('integer', 'text') OR typeof(NEW.shot_number) <> 'integer' OR NEW.shot_number NOT BETWEEN 1 AND 1000000)) OR (COALESCE(NEW.is_test_plan, 0) = 1 AND (NEW.sequence_number IS NOT NULL OR NEW.shot_number IS NOT NULL))"
         : "((typeof(NEW.sequence_number) = 'integer' AND NEW.sequence_number NOT BETWEEN 1 AND 1000000) OR (typeof(NEW.sequence_number) = 'text' AND length(trim(NEW.sequence_number)) NOT BETWEEN 1 AND 100) OR typeof(NEW.sequence_number) NOT IN ('integer', 'text') OR typeof(NEW.shot_number) <> 'integer' OR NEW.shot_number NOT BETWEEN 1 AND 1000000)"}
-      BEGIN SELECT RAISE(ABORT, '#Seq must be a number or text and #Shot must be a positive integer'); END;
+      BEGIN SELECT RAISE(ABORT, '#Seq is required as a number or text and #Shot must be a positive integer'); END;
       CREATE TRIGGER ai_plans_numbers_locked BEFORE UPDATE OF sequence_number, shot_number, ${hasTestFlag ? "is_test_plan" : "sequence_number"} ON ai_plans
       WHEN NEW.sequence_number IS NOT OLD.sequence_number OR NEW.shot_number IS NOT OLD.shot_number
       BEGIN SELECT RAISE(ABORT, '#Seq and #Shot are locked'); END;

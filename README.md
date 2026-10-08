@@ -80,6 +80,8 @@ The Docker workflow remains the source of truth for checks, tests, and productio
 - Admin, Supervisor, Generator, Creator, Reviewer, and Viewer roles
 - Admin-defined custom roles with granular account, shot, workflow, deletion, review, and library permissions
 - Admin-only account creation, role management, access management, and generation catalog settings
+- Admin password resets using the default `AIHub@12345` or a custom password, including disabled accounts
+- Enable or permanently delete disabled accounts while retaining production files and activity history
 
 ## Stack
 

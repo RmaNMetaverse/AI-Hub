@@ -39,7 +39,7 @@ test("legacy shots and generations receive stable numbers without losing IDs or 
 
     assert.throws(() => db.exec("UPDATE ai_plans SET shot_number = 12 WHERE id = 10"), /locked/);
     assert.throws(() => db.exec("INSERT INTO ai_plans (id, project_id) VALUES (90, 1)"), /required/);
-    assert.throws(() => db.exec("INSERT INTO ai_plans VALUES (90, 1, '', '', 1, 1.5)"), /integers/);
+    assert.throws(() => db.exec("INSERT INTO ai_plans VALUES (90, 1, '', '', 1, 1.5)"), /positive integer/);
     assert.throws(() => db.exec("INSERT INTO generations VALUES (90, 10, 5, 12)"), /match/);
     assert.throws(() => db.exec("INSERT INTO generations (id, plan_id) VALUES (90, 10)"), /match/);
     assert.throws(() => db.exec("UPDATE generations SET plan_id = 20 WHERE id = 60"), /locked/);
