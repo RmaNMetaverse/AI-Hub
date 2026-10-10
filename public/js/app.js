@@ -95,6 +95,14 @@ function planCoverMarkup(plan) {
 
 function shotCard(plan) {
   const query = window.shotNavigation.query();
+  const canSetWip = plan.status === "Approved" && (state.permissions.canApprovePlans || state.permissions.canManageWorkflow);
+  const menuItems = [
+    state.permissions.canAssignPlans && `<button type="button" class="plan-card-menu-item" data-plan-card-action="assign"><i data-lucide="users" class="h-4 w-4"></i>Manage assignments</button>`,
+    state.permissions.canEditPlans && `<button type="button" class="plan-card-menu-item" data-plan-card-action="cover"><i data-lucide="image-plus" class="h-4 w-4"></i>Change cover art</button>`,
+    plan.status !== "Approved" && state.permissions.canApprovePlans && `<button type="button" class="plan-card-menu-item" data-plan-card-action="approve"><i data-lucide="circle-check" class="h-4 w-4"></i>Approve plan</button>`,
+    canSetWip && `<button type="button" class="plan-card-menu-item" data-plan-card-action="wip"><i data-lucide="clock" class="h-4 w-4"></i>Mark as WIP</button>`,
+    state.permissions.canDeletePlans && `<div class="my-1 border-t border-white/[0.08]"></div><button type="button" class="plan-card-menu-item text-red-300 hover:bg-red-400/10 hover:text-red-200" data-plan-card-action="delete"><i data-lucide="trash-2" class="h-4 w-4"></i>Delete plan</button>`
+  ].filter(Boolean).join("");
   return `
     <article class="plan-card group relative" data-plan-id="${plan.id}">
       <a href="${window.__AI_HUB_BASE__ || ""}/plans/${plan.id}${query ? `?${query}` : ""}" class="block">
@@ -112,10 +120,29 @@ function shotCard(plan) {
         <div class="mt-2 truncate text-[10px] text-zinc-500" title="${escapeHtml((plan.assignees || []).map((user) => user.display_name).join(", "))}">Assigned: ${escapeHtml((plan.assignees || []).map((user) => user.display_name).join(", ") || "No one")}</div>
       </div>
       </a>
-      ${state.permissions.canEditPlans ? `<button class="cover-plan-card icon-button absolute right-3 top-3 z-10 bg-black/70 text-zinc-300 hover:text-acid" aria-label="Change cover for ${escapeHtml(plan.title)}" title="Change cover art"><i data-lucide="image-plus" class="h-3.5 w-3.5"></i></button>` : ""}
-      ${state.permissions.canAssignPlans ? `<button class="assign-plan-card icon-button absolute right-12 top-3 z-10 bg-black/70 text-zinc-300 hover:text-acid" aria-label="Assign ${escapeHtml(plan.title)}" title="Manage assignments"><i data-lucide="users" class="h-3.5 w-3.5"></i></button>` : ""}
-      ${state.permissions.canDeletePlans ? `<button class="delete-plan-card icon-button absolute right-3 top-12 z-10 border-red-300/10 bg-black/70 text-red-300/70 hover:text-red-200" aria-label="Delete ${escapeHtml(plan.title)}" title="Delete shot"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ""}
+      ${menuItems ? `<div class="plan-card-menu absolute right-3 top-3 z-20"><button type="button" class="plan-card-menu-toggle icon-button border-white/10 bg-black/70 text-zinc-300 backdrop-blur-md hover:text-acid" aria-label="More options for ${escapeHtml(plan.title)}" aria-expanded="false" aria-haspopup="menu"><i data-lucide="ellipsis" class="h-4 w-4"></i></button><div class="plan-card-menu-panel absolute right-0 top-11 hidden w-52 overflow-hidden rounded-xl border border-white/10 bg-[#16181b]/95 p-1.5 shadow-float backdrop-blur-xl" role="menu">${menuItems}</div></div>` : ""}
     </article>`;
+}
+
+function closePlanCardMenus(except = null) {
+  els.grid.querySelectorAll(".plan-card-menu").forEach((menu) => {
+    if (menu === except) return;
+    menu.querySelector(".plan-card-menu-panel")?.classList.add("hidden");
+    menu.querySelector(".plan-card-menu-toggle")?.setAttribute("aria-expanded", "false");
+  });
+}
+
+async function changePlanCardStatus(plan, status) {
+  const response = await fetch(`/api/plans/${plan.id}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) return showToast(payload.error || "Could not update plan status");
+  state.plans = state.plans.map((item) => item.id === plan.id ? { ...item, ...payload } : item);
+  render();
+  showToast(status === "Approved" ? "Plan approved" : "Plan marked as WIP");
 }
 
 function render() {
@@ -124,32 +151,39 @@ function render() {
   els.grid.innerHTML = plans.map(shotCard).join("");
   els.count.textContent = `${plans.length} of ${state.plans.length} shots`;
   els.empty.classList.toggle("hidden", plans.length > 0);
-  els.grid.querySelectorAll(".delete-plan-card").forEach((button) => button.addEventListener("click", async (event) => {
+  els.grid.querySelectorAll(".plan-card-menu-toggle").forEach((button) => button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const menu = button.closest(".plan-card-menu");
+    const panel = menu.querySelector(".plan-card-menu-panel");
+    const open = panel.classList.contains("hidden");
+    closePlanCardMenus(open ? menu : null);
+    panel.classList.toggle("hidden", !open);
+    button.setAttribute("aria-expanded", String(open));
+  }));
+  els.grid.querySelectorAll("[data-plan-card-action]").forEach((button) => button.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
     const id = Number(button.closest("[data-plan-id]").dataset.planId);
     const plan = state.plans.find((item) => item.id === id);
-    if (!window.confirm(`Delete #Seq ${plan.sequence_number} / #Shot ${plan.shot_number} and all of its generations and files? This cannot be undone.`)) return;
-    const response = await fetch(`/api/plans/${id}`, { method: "DELETE" });
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      return showToast(payload.error || "Could not delete shot");
+    if (!plan) return;
+    const action = button.dataset.planCardAction;
+    closePlanCardMenus();
+    if (action === "assign") return window.openPlanAssignment?.(plan);
+    if (action === "cover") return openCoverEditor(id);
+    if (action === "approve") return changePlanCardStatus(plan, "Approved");
+    if (action === "wip") return changePlanCardStatus(plan, "WIP");
+    if (action === "delete") {
+      if (!window.confirm(`Delete #Seq ${plan.sequence_number} / #Shot ${plan.shot_number} and all of its generations and files? This cannot be undone.`)) return;
+      const response = await fetch(`/api/plans/${id}`, { method: "DELETE" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        return showToast(payload.error || "Could not delete shot");
+      }
+      state.plans = state.plans.filter((item) => item.id !== id);
+      render();
+      showToast("Shot deleted");
     }
-    state.plans = state.plans.filter((item) => item.id !== id);
-    render();
-    showToast("Shot deleted");
-  }));
-  els.grid.querySelectorAll(".cover-plan-card").forEach((button) => button.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const id = Number(button.closest("[data-plan-id]").dataset.planId);
-    openCoverEditor(id);
-  }));
-  els.grid.querySelectorAll(".assign-plan-card").forEach((button) => button.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const plan = state.plans.find((item) => item.id === Number(button.closest("[data-plan-id]").dataset.planId));
-    if (plan) window.openPlanAssignment?.(plan);
   }));
   els.grid.querySelectorAll("[data-plan-cover-video]").forEach((video) => {
     video.addEventListener("loadedmetadata", () => {
@@ -159,6 +193,20 @@ function render() {
   });
   lucide.createIcons();
 }
+
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".plan-card-menu")) closePlanCardMenus();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  const openMenu = [...els.grid.querySelectorAll(".plan-card-menu-panel")].find((panel) => !panel.classList.contains("hidden"));
+  if (!openMenu) return;
+  event.preventDefault();
+  const toggle = openMenu.closest(".plan-card-menu").querySelector(".plan-card-menu-toggle");
+  closePlanCardMenus();
+  toggle?.focus();
+});
 
 function openModal() {
   for (const name of ["sequence_number", "shot_number"]) {
