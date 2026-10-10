@@ -1,0 +1,18 @@
+{
+  "name": "AI Hub",
+  "short_name": "AI Hub",
+  "description": "Cinematic AI media planning and review workspace",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#08090a",
+  "theme_color": "#08090a",
+  "icons": [
+    {
+      "src": "./icons/ai-hub.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

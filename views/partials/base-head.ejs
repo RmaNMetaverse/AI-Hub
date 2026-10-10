@@ -3,6 +3,9 @@
     --cinematic-thumbnail: url("<%= basePath %>/storage/thumbnails/cinematic-frames");
   }
 </style>
+<link rel="manifest" href="<%= basePath %>/manifest.webmanifest" />
+<link rel="icon" type="image/svg+xml" href="<%= basePath %>/icons/ai-hub.svg" />
+<link rel="apple-touch-icon" href="<%= basePath %>/icons/ai-hub.svg" />
 <script>
   window.__AI_HUB_BASE__ = "<%= basePath %>";
   if (window.__AI_HUB_BASE__) {
@@ -13,6 +16,11 @@
       }
       return _origFetch.call(this, input, init);
     };
+  }
+</script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => navigator.serviceWorker.register("<%= basePath %>/sw.js").catch(() => {}));
   }
 </script>
 <script src="<%= basePath %>/js/file-drop.js" defer></script>
