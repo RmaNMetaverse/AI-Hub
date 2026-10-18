@@ -17,6 +17,7 @@ const toast = document.querySelector("#libraryToast");
 const modal = document.querySelector("#libraryModal");
 const assetViewer = document.querySelector("#assetViewerModal");
 const libraryMediaViewer = document.querySelector("#libraryMediaViewer");
+const appPath = (path) => `${window.__AI_HUB_BASE__ || ""}${path}`;
 let assetTagValues = [];
 let pendingTagSave = Promise.resolve();
 
@@ -63,7 +64,22 @@ function promptCard(prompt) {
 function assetCard(asset) {
   const files = asset.files?.length ? asset.files : [asset];
   const primary = files[0];
-  return `<article class="group relative overflow-hidden rounded-3xl border border-white/[0.07] bg-[#101113] transition hover:-translate-y-0.5 hover:border-white/20" data-asset-id="${asset.id}"><button type="button" class="open-asset block w-full text-left" aria-label="Open ${escapeHtml(asset.title)}"><div class="overflow-hidden bg-black/20">${mediaPreview(primary)}</div><div class="p-4"><div class="text-[9px] font-semibold uppercase tracking-[0.13em] text-acid">${escapeHtml(asset.category)}</div><h2 class="mt-2 truncate text-sm font-semibold text-zinc-200">${escapeHtml(asset.title)}</h2><p class="mt-2 line-clamp-2 min-h-9 text-[10px] leading-[18px] text-zinc-600">${escapeHtml(asset.description || primary.original_name)}</p><div class="mt-3 flex flex-wrap gap-1">${asset.tags.map((tag) => `<span class="rounded-full bg-white/[0.035] px-2 py-1 text-[8px] text-zinc-600">${escapeHtml(tag)}</span>`).join("")}</div><div class="mt-4 border-t border-white/[0.06] pt-3 text-[10px] text-zinc-600">${files.length} file${files.length === 1 ? "" : "s"} · ${formatBytes(files.reduce((total, file) => total + Number(file.size_bytes || 0), 0))} <span class="text-acid">· View files</span></div></div></button>${permissions.canManageLibraries ? `<button type="button" class="delete-asset icon-button absolute right-3 top-3 bg-black/80 text-red-300/70" aria-label="Delete ${escapeHtml(asset.title)}"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ""}</article>`;
+  const bulkActions = files.length > 1 ? `<div class="flex flex-wrap gap-2 border-t border-white/[0.06] px-4 pb-4 pt-3"><a href="${appPath(`/library-assets/${asset.id}/files.zip`)}" class="download-asset-zip ghost-button h-8 px-2.5 text-[9px]" title="Download all files as a ZIP"><i data-lucide="archive" class="h-3.5 w-3.5"></i>Download all as ZIP</a><button type="button" class="download-asset-all ghost-button h-8 px-2.5 text-[9px]" data-asset-id="${asset.id}" title="Download each file separately"><i data-lucide="download-cloud" class="h-3.5 w-3.5"></i>Download all</button></div>` : "";
+  return `<article class="group relative overflow-hidden rounded-3xl border border-white/[0.07] bg-[#101113] transition hover:-translate-y-0.5 hover:border-white/20" data-asset-id="${asset.id}"><button type="button" class="open-asset block w-full text-left" aria-label="Open ${escapeHtml(asset.title)}"><div class="overflow-hidden bg-black/20">${mediaPreview(primary)}</div><div class="p-4"><div class="text-[9px] font-semibold uppercase tracking-[0.13em] text-acid">${escapeHtml(asset.category)}</div><h2 class="mt-2 truncate text-sm font-semibold text-zinc-200">${escapeHtml(asset.title)}</h2><p class="mt-2 line-clamp-2 min-h-9 text-[10px] leading-[18px] text-zinc-600">${escapeHtml(asset.description || primary.original_name)}</p><div class="mt-3 flex flex-wrap gap-1">${asset.tags.map((tag) => `<span class="rounded-full bg-white/[0.035] px-2 py-1 text-[8px] text-zinc-600">${escapeHtml(tag)}</span>`).join("")}</div><div class="mt-4 border-t border-white/[0.06] pt-3 text-[10px] text-zinc-600">${files.length} file${files.length === 1 ? "" : "s"} · ${formatBytes(files.reduce((total, file) => total + Number(file.size_bytes || 0), 0))} <span class="text-acid">· View files</span></div></div></button>${bulkActions}${permissions.canManageLibraries ? `<button type="button" class="delete-asset icon-button absolute right-3 top-3 bg-black/80 text-red-300/70" aria-label="Delete ${escapeHtml(asset.title)}"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ""}</article>`;
+}
+
+function downloadAssetFiles(asset) {
+  const files = asset.files?.length ? asset.files : [asset];
+  files.forEach((file) => {
+    const link = document.createElement("a");
+    link.href = file.download_url;
+    link.download = file.original_name || "asset";
+    link.rel = "noopener";
+    document.body.append(link);
+    link.click();
+    link.remove();
+  });
+  showToast(`Starting ${files.length} downloads…`);
 }
 
 function assetFilePreview(file) {
@@ -81,7 +97,10 @@ function openAssetViewer(asset) {
   assetViewer.querySelector("#assetViewerTitle").textContent = asset.title;
   assetViewer.querySelector("#assetViewerDescription").textContent = asset.description || "";
   assetViewer.querySelector("#assetViewerTags").innerHTML = asset.tags.map((tag) => `<span class="rounded-full border border-white/10 px-2.5 py-1 text-[10px] text-zinc-400">${escapeHtml(tag)}</span>`).join("");
-  assetViewer.querySelector("#assetViewerFiles").innerHTML = (asset.files?.length ? asset.files : [asset]).map((file) => `<article class="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-black/20">${assetFilePreview(file)}<div class="flex items-center gap-3 p-3"><div class="min-w-0 flex-1"><div class="truncate text-xs font-semibold text-zinc-200" title="${escapeHtml(file.original_name)}">${escapeHtml(file.original_name)}</div><div class="mt-1 text-[10px] text-zinc-600">${formatBytes(file.size_bytes)}</div></div><a href="${escapeHtml(file.download_url)}" class="ghost-button h-8 px-3 text-[10px]">Download</a></div></article>`).join("");
+  const files = asset.files?.length ? asset.files : [asset];
+  assetViewer.querySelector("#assetViewerFiles").innerHTML = files.map((file) => `<article class="min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-black/20">${assetFilePreview(file)}<div class="flex items-center gap-3 p-3"><div class="min-w-0 flex-1"><div class="truncate text-xs font-semibold text-zinc-200" title="${escapeHtml(file.original_name)}">${escapeHtml(file.original_name)}</div><div class="mt-1 text-[10px] text-zinc-600">${formatBytes(file.size_bytes)}</div></div><a href="${escapeHtml(file.download_url)}" class="ghost-button h-8 px-3 text-[10px]">Download</a></div></article>`).join("");
+  const bulk = assetViewer.querySelector("#assetViewerDownloads");
+  bulk.innerHTML = files.length > 1 ? `<a href="${appPath(`/library-assets/${asset.id}/files.zip`)}" class="ghost-button h-9 px-3 text-[10px]"><i data-lucide="archive" class="h-3.5 w-3.5"></i>Download all as ZIP</a><button type="button" class="download-asset-all primary-button h-9 px-3 text-[10px]" data-asset-id="${asset.id}"><i data-lucide="download-cloud" class="h-3.5 w-3.5"></i>Download all</button>` : "";
   assetViewer.classList.remove("hidden");
   assetViewer.classList.add("flex");
   requestAnimationFrame(() => assetViewer.querySelector(".modal-card").classList.add("open"));
@@ -154,6 +173,13 @@ function bindCards() {
     const asset = items.find((item) => item.id === Number(button.closest("[data-asset-id]").dataset.assetId));
     if (asset) openAssetViewer(asset);
   }));
+  grid.querySelectorAll(".download-asset-all").forEach((button) => button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const asset = items.find((item) => item.id === Number(button.dataset.assetId));
+    if (asset) downloadAssetFiles(asset);
+  }));
+  grid.querySelectorAll(".download-asset-zip").forEach((button) => button.addEventListener("click", (event) => event.stopPropagation()));
   grid.querySelectorAll(".add-prompt-assets").forEach((button) => button.addEventListener("click", () => {
     activePromptId = Number(button.closest("[data-prompt-id]").dataset.promptId);
     document.querySelector("#promptAssetPicker").click();
@@ -226,6 +252,12 @@ document.querySelector("#addLibraryItem")?.addEventListener("click", openModal);
 document.querySelectorAll(".library-modal-close").forEach((button) => button.addEventListener("click", closeModal));
 modal?.addEventListener("click", (event) => { if (event.target === modal) closeModal(); });
 assetViewer?.addEventListener("click", (event) => { if (event.target === assetViewer) closeAssetViewer(); });
+assetViewer?.addEventListener("click", (event) => {
+  const button = event.target.closest(".download-asset-all");
+  if (!button) return;
+  event.preventDefault();
+  downloadAssetFiles(items.find((item) => item.id === Number(button.dataset.assetId)));
+});
 libraryMediaViewer?.addEventListener("click", (event) => { if (event.target === libraryMediaViewer) closeLibraryMediaViewer(); });
 document.querySelector("#closeAssetViewer")?.addEventListener("click", closeAssetViewer);
 document.querySelector("#libraryMediaViewerClose")?.addEventListener("click", closeLibraryMediaViewer);

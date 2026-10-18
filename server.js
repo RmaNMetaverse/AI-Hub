@@ -988,6 +988,42 @@ async function downloadPlanArchive(request, response, kind) {
 router.get("/plans/:id/generations.zip", (request, response) => downloadPlanArchive(request, response, "generations"));
 router.get("/plans/:id/assets.zip", (request, response) => downloadPlanArchive(request, response, "assets"));
 
+async function downloadLibraryAssetArchive(request, response) {
+  const assetId = Number(request.params.id);
+  if (!Number.isSafeInteger(assetId) || assetId < 1) return response.status(404).json({ error: "Asset not found" });
+  const asset = getLibraryAsset(assetId);
+  const files = asset?.files || [];
+  if (!asset) return response.status(404).json({ error: "Asset not found" });
+  if (!files.length) return response.status(404).json({ error: "This asset has no files to download" });
+
+  const archiveFiles = [];
+  try {
+    for (const file of files) {
+      const filePath = absoluteStoragePath(file.storage_key);
+      const stat = await fsp.stat(filePath);
+      if (!stat.isFile()) throw new Error("Stored file is not available");
+      const safeName = safeOriginalName(file.original_name).replace(/[\\/]/g, "_").replace(/^\.+$/, "file");
+      archiveFiles.push({ filePath, entryName: `${file.id}-${safeName}` });
+    }
+  } catch (_error) {
+    return response.status(409).json({ error: "One or more stored files are missing. The ZIP could not be created." });
+  }
+
+  const archive = new ZipArchive({ forceZip64: true, zlib: { level: 1 } });
+  const archiveName = `${safeOriginalName(asset.title || "asset")}-files.zip`;
+  response.setHeader("Content-Type", "application/zip");
+  response.setHeader("Content-Disposition", contentDisposition(archiveName, false));
+  response.setHeader("Cache-Control", "private, no-store");
+  archive.on("error", () => response.destroy());
+  response.on("close", () => { if (!response.writableFinished) archive.abort(); });
+  archive.pipe(response);
+  archiveFiles.forEach(({ filePath, entryName }) => archive.file(filePath, { name: entryName }));
+  try { await archive.finalize(); }
+  catch (_error) { response.destroy(); }
+}
+
+router.get("/library-assets/:id/files.zip", downloadLibraryAssetArchive);
+
 async function downloadGenerationVideos(request, response) {
   const planId = Number(request.params.id);
   const generationId = Number(request.params.generationId);
