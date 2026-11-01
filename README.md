@@ -1,5 +1,7 @@
 # AI Hub
 
+
+https://github.com/user-attachments/assets/44fe8a8a-682e-455a-8e69-bfefb2da53b9
 AI Hub is a local-first cinematic production workspace for planning AI media, tracking prompt versions and generations, reviewing results, and approving finals.
 
 ## Start AI Hub
